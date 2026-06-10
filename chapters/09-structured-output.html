@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Structured Output - MCP Python SDK 튜토리얼</title>
+  <link rel="stylesheet" href="../css/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.css">
+</head>
+<body>
+
+<header class="site-header">
+  <button class="hamburger" aria-label="메뉴">
+    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+  </button>
+  <a href="../index.html" class="site-header__title"><span>MCP</span> Python SDK 튜토리얼</a>
+  <span class="site-header__badge">v1.12.x</span>
+</header>
+
+<div class="layout">
+  <nav class="sidebar"></nav>
+  <main class="main">
+    <span class="chapter-badge chapter-badge--advanced">심화 과정</span>
+    <h1>Structured Output</h1>
+    <p class="chapter-subtitle">Pydantic 모델을 활용하여 도구의 반환값을 구조화한다</p>
+
+    <!-- 섹션 1: Structured Output이란? -->
+    <section>
+      <h2>Structured Output이란?</h2>
+      <p>
+        MCP 도구는 기본적으로 문자열을 반환한다. 하지만 단순 텍스트만으로는 LLM이 결과를 정확하게 해석하기 어려운 경우가 많다.
+        Structured Output은 도구가 <strong>구조화된 JSON 스키마</strong>로 결과를 반환하는 패턴이다.
+      </p>
+      <p>
+        구조화된 반환값을 사용하면 다음과 같은 이점이 있다:
+      </p>
+      <ul>
+        <li><strong>정확한 해석</strong> &mdash; LLM이 각 필드의 의미를 명확히 파악할 수 있다</li>
+        <li><strong>타입 안전성</strong> &mdash; 반환값의 형태가 보장되어 런타임 오류가 줄어든다</li>
+        <li><strong>자동 문서화</strong> &mdash; JSON Schema가 자동으로 생성되어 도구 메타데이터에 포함된다</li>
+        <li><strong>데이터 검증</strong> &mdash; Pydantic이 자동으로 데이터 유효성을 검증한다</li>
+      </ul>
+
+      <div class="info-box info-box--info">
+        <div class="info-box__title">INFO</div>
+        <p>FastMCP는 도구의 반환 타입 힌트를 분석하여 자동으로 결과를 적절한 형식으로 변환한다. Pydantic 모델, TypedDict, dict, 리스트 등 다양한 타입을 지원한다.</p>
+      </div>
+    </section>
+
+    <!-- 섹션 2: Pydantic 모델 사용 -->
+    <section>
+      <h2>Pydantic 모델 사용</h2>
+      <p>
+        가장 권장되는 방법은 <strong>Pydantic BaseModel</strong>을 사용하는 것이다.
+        <code>Field</code>의 <code>description</code>을 활용하면 각 필드에 대한 설명이 JSON Schema에 포함되어
+        LLM이 반환값의 의미를 더 정확하게 이해할 수 있다.
+      </p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python">from pydantic import BaseModel, Field
+from mcp.server.fastmcp import FastMCP
+
+mcp = FastMCP("Structured Output Example")
+
+class WeatherData(BaseModel):
+    """날씨 정보"""
+    temperature: float = Field(description="섭씨 온도")
+    humidity: float = Field(description="습도 (%)")
+    condition: str = Field(description="날씨 상태")
+    wind_speed: float = Field(description="풍속 (m/s)")
+
+@mcp.tool()
+def get_weather(city: str) -> WeatherData:
+    """도시의 날씨를 조회한다"""
+    return WeatherData(
+        temperature=22.5,
+        humidity=45.0,
+        condition="맑음",
+        wind_speed=5.2,
+    )</code></pre>
+      </div>
+
+      <p>
+        위 코드에서 <code>WeatherData</code> 모델은 네 개의 필드를 가지며, 각 필드에 <code>description</code>이 지정되어 있다.
+        FastMCP는 이 모델을 자동으로 JSON으로 직렬화하여 반환한다.
+      </p>
+
+      <div class="info-box info-box--tip">
+        <div class="info-box__title">TIP</div>
+        <p>Pydantic 모델의 docstring(<code>"""날씨 정보"""</code>)도 JSON Schema의 <code>description</code>에 포함된다. 모델 자체에 대한 설명을 반드시 작성하자.</p>
+      </div>
+    </section>
+
+    <!-- 섹션 3: TypedDict 사용 -->
+    <section>
+      <h2>TypedDict 사용</h2>
+      <p>
+        Pydantic보다 가벼운 대안으로 <strong>TypedDict</strong>를 사용할 수 있다.
+        별도의 라이브러리 없이 Python 표준 라이브러리만으로 구조화된 반환값을 정의할 수 있다.
+      </p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python">from typing import TypedDict
+
+class LocationInfo(TypedDict):
+    latitude: float
+    longitude: float
+    name: str
+
+@mcp.tool()
+def get_location(address: str) -> LocationInfo:
+    """주소의 좌표를 조회한다"""
+    return LocationInfo(latitude=37.5665, longitude=126.9780, name="서울")</code></pre>
+      </div>
+
+      <p>
+        TypedDict는 Pydantic에 비해 <code>Field(description=...)</code> 같은 상세한 메타데이터를 제공하지 못하지만,
+        간단한 구조에서는 충분히 유용하다.
+      </p>
+
+      <div class="info-box info-box--warning">
+        <div class="info-box__title">WARNING</div>
+        <p>TypedDict는 런타임 유효성 검증을 수행하지 않는다. 데이터 검증이 중요한 경우에는 Pydantic 모델을 사용하는 것이 안전하다.</p>
+      </div>
+    </section>
+
+    <!-- 섹션 4: dict, 일반 클래스 활용 -->
+    <section>
+      <h2>dict 및 일반 클래스 활용</h2>
+      <p>
+        <code>dict[str, Any]</code>를 직접 반환하거나, 일반 Python 클래스를 사용할 수도 있다.
+        다만 타입 힌트를 반드시 지정해야 FastMCP가 올바르게 처리할 수 있다.
+      </p>
+
+      <h3>dict 반환</h3>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python">from typing import Any
+
+@mcp.tool()
+def get_server_status() -> dict[str, Any]:
+    """서버 상태를 조회한다"""
+    return {
+        "status": "running",
+        "uptime_seconds": 86400,
+        "connections": 42,
+        "memory_usage_mb": 512.3,
+    }</code></pre>
+      </div>
+
+      <h3>일반 Python 클래스 반환</h3>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python">from dataclasses import dataclass
+
+@dataclass
+class UserProfile:
+    """사용자 프로필 정보"""
+    user_id: int
+    username: str
+    email: str
+    is_active: bool
+
+@mcp.tool()
+def get_user(user_id: int) -> UserProfile:
+    """사용자 정보를 조회한다"""
+    return UserProfile(
+        user_id=user_id,
+        username="hong",
+        email="hong@example.com",
+        is_active=True,
+    )</code></pre>
+      </div>
+
+      <div class="info-box info-box--tip">
+        <div class="info-box__title">TIP</div>
+        <p><code>dataclass</code>를 사용하면 Pydantic과 유사한 구조화를 달성하면서도 의존성을 줄일 수 있다. 하지만 JSON Schema 자동 생성이나 데이터 검증은 지원되지 않으므로, 도구 메타데이터의 품질이 중요하다면 Pydantic을 사용하자.</p>
+      </div>
+    </section>
+
+    <!-- 섹션 5: 리스트 및 단순 타입 -->
+    <section>
+      <h2>리스트 및 단순 타입</h2>
+      <p>
+        <code>list[str]</code>, <code>float</code>, <code>int</code> 등 단순 타입도 반환값으로 사용할 수 있다.
+        FastMCP는 이러한 값들을 자동으로 적절한 형태로 래핑하여 MCP 프로토콜에 맞게 변환한다.
+      </p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python">@mcp.tool()
+def list_cities(country: str) -> list[str]:
+    """국가의 주요 도시 목록을 반환한다"""
+    cities = {
+        "한국": ["서울", "부산", "인천", "대구", "광주"],
+        "일본": ["도쿄", "오사카", "교토", "나고야", "삿포로"],
+    }
+    return cities.get(country, [])
+
+@mcp.tool()
+def calculate_bmi(weight_kg: float, height_m: float) -> float:
+    """BMI를 계산한다"""
+    return round(weight_kg / (height_m ** 2), 2)
+
+@mcp.tool()
+def count_words(text: str) -> int:
+    """텍스트의 단어 수를 센다"""
+    return len(text.split())</code></pre>
+      </div>
+
+      <p>
+        위 예제에서 <code>list[str]</code>은 JSON 배열로, <code>float</code>과 <code>int</code>는 문자열로 변환되어 반환된다.
+        FastMCP는 반환 타입에 따라 자동으로 <code>TextContent</code> 또는 구조화된 형태로 변환한다.
+      </p>
+    </section>
+
+    <!-- 섹션 6: 스키마 자동 생성 -->
+    <section>
+      <h2>스키마 자동 생성</h2>
+      <p>
+        Pydantic 모델을 반환 타입으로 사용하면, FastMCP가 모델의 JSON Schema를 자동으로 생성하여
+        도구의 메타데이터에 포함시킨다. 이를 통해 LLM은 도구를 호출하기 전에
+        반환값의 구조를 미리 파악할 수 있다.
+      </p>
+
+      <div class="info-box info-box--info">
+        <div class="info-box__title">INFO</div>
+        <p>Pydantic 모델의 JSON Schema 자동 생성 원리는 다음과 같다:</p>
+        <ol>
+          <li>FastMCP가 도구 함수의 반환 타입 힌트를 검사한다</li>
+          <li>반환 타입이 Pydantic BaseModel인 경우, <code>model.model_json_schema()</code>를 호출한다</li>
+          <li>생성된 JSON Schema가 도구의 <code>outputSchema</code> 메타데이터에 포함된다</li>
+          <li>LLM이 도구 목록을 조회할 때 이 스키마 정보를 함께 받는다</li>
+        </ol>
+      </div>
+
+      <p>예를 들어, 앞서 정의한 <code>WeatherData</code> 모델은 다음과 같은 JSON Schema를 생성한다:</p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-json">{
+  "title": "WeatherData",
+  "description": "날씨 정보",
+  "type": "object",
+  "properties": {
+    "temperature": {
+      "type": "number",
+      "description": "섭씨 온도"
+    },
+    "humidity": {
+      "type": "number",
+      "description": "습도 (%)"
+    },
+    "condition": {
+      "type": "string",
+      "description": "날씨 상태"
+    },
+    "wind_speed": {
+      "type": "number",
+      "description": "풍속 (m/s)"
+    }
+  },
+  "required": ["temperature", "humidity", "condition", "wind_speed"]
+}</code></pre>
+      </div>
+
+      <p>
+        이 스키마 덕분에 LLM은 <code>get_weather</code> 도구가 어떤 구조의 데이터를 반환하는지 정확히 알 수 있으며,
+        반환된 결과를 파싱하여 후속 작업에 활용할 수 있다.
+      </p>
+    </section>
+
+    <!-- 섹션 7: 실전 예제 -->
+    <section>
+      <h2>실전 예제: 주식 정보 API</h2>
+      <p>
+        여러 Pydantic 모델을 조합하여 주식 정보를 조회하는 MCP 서버를 구축해 보자.
+        이 예제는 실제 API와 연동하는 구조를 시뮬레이션한다.
+      </p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python">from datetime import datetime
+from pydantic import BaseModel, Field
+from mcp.server.fastmcp import FastMCP
+
+mcp = FastMCP("Stock API")
+
+
+# --- 모델 정의 ---
+
+class StockPrice(BaseModel):
+    """주식 가격 정보"""
+    symbol: str = Field(description="종목 코드")
+    name: str = Field(description="종목명")
+    current_price: float = Field(description="현재가 (원)")
+    change: float = Field(description="전일 대비 변동액 (원)")
+    change_percent: float = Field(description="전일 대비 변동률 (%)")
+    volume: int = Field(description="거래량")
+    timestamp: str = Field(description="조회 시각 (ISO 8601)")
+
+
+class StockDetail(BaseModel):
+    """주식 상세 정보"""
+    symbol: str = Field(description="종목 코드")
+    name: str = Field(description="종목명")
+    market_cap: float = Field(description="시가총액 (억 원)")
+    per: float = Field(description="PER (주가수익비율)")
+    pbr: float = Field(description="PBR (주가순자산비율)")
+    dividend_yield: float = Field(description="배당수익률 (%)")
+    high_52w: float = Field(description="52주 최고가 (원)")
+    low_52w: float = Field(description="52주 최저가 (원)")
+    sector: str = Field(description="업종")
+
+
+class PortfolioSummary(BaseModel):
+    """포트폴리오 요약"""
+    total_value: float = Field(description="총 평가액 (원)")
+    total_profit: float = Field(description="총 수익 (원)")
+    profit_rate: float = Field(description="수익률 (%)")
+    holdings: list[StockPrice] = Field(description="보유 종목 목록")
+
+
+# --- 시뮬레이션 데이터 ---
+
+STOCK_DB = {
+    "005930": {
+        "name": "삼성전자",
+        "price": 72000,
+        "change": 1500,
+        "volume": 15234567,
+        "market_cap": 4297000,
+        "per": 12.5,
+        "pbr": 1.3,
+        "dividend_yield": 2.1,
+        "high_52w": 78000,
+        "low_52w": 58000,
+        "sector": "반도체",
+    },
+    "000660": {
+        "name": "SK하이닉스",
+        "price": 185000,
+        "change": -2000,
+        "volume": 3456789,
+        "market_cap": 1347000,
+        "per": 8.7,
+        "pbr": 1.8,
+        "dividend_yield": 1.5,
+        "high_52w": 210000,
+        "low_52w": 120000,
+        "sector": "반도체",
+    },
+}
+
+
+# --- 도구 정의 ---
+
+@mcp.tool()
+def get_stock_price(symbol: str) -> StockPrice:
+    """종목의 현재 가격을 조회한다"""
+    data = STOCK_DB.get(symbol)
+    if not data:
+        raise ValueError(f"종목 코드 '{symbol}'을 찾을 수 없다")
+
+    return StockPrice(
+        symbol=symbol,
+        name=data["name"],
+        current_price=data["price"],
+        change=data["change"],
+        change_percent=round(data["change"] / (data["price"] - data["change"]) * 100, 2),
+        volume=data["volume"],
+        timestamp=datetime.now().isoformat(),
+    )
+
+
+@mcp.tool()
+def get_stock_detail(symbol: str) -> StockDetail:
+    """종목의 상세 정보를 조회한다"""
+    data = STOCK_DB.get(symbol)
+    if not data:
+        raise ValueError(f"종목 코드 '{symbol}'을 찾을 수 없다")
+
+    return StockDetail(
+        symbol=symbol,
+        name=data["name"],
+        market_cap=data["market_cap"],
+        per=data["per"],
+        pbr=data["pbr"],
+        dividend_yield=data["dividend_yield"],
+        high_52w=data["high_52w"],
+        low_52w=data["low_52w"],
+        sector=data["sector"],
+    )
+
+
+@mcp.tool()
+def get_portfolio(symbols: list[str]) -> PortfolioSummary:
+    """여러 종목의 포트폴리오 요약을 조회한다"""
+    holdings = []
+    total_value = 0.0
+    total_cost = 0.0
+
+    for symbol in symbols:
+        price_info = get_stock_price(symbol)
+        holdings.append(price_info)
+        # 시뮬레이션: 각 종목 100주 보유 가정
+        total_value += price_info.current_price * 100
+        total_cost += (price_info.current_price - price_info.change) * 100
+
+    total_profit = total_value - total_cost
+    profit_rate = round((total_profit / total_cost) * 100, 2) if total_cost > 0 else 0.0
+
+    return PortfolioSummary(
+        total_value=total_value,
+        total_profit=total_profit,
+        profit_rate=profit_rate,
+        holdings=holdings,
+    )
+
+
+if __name__ == "__main__":
+    mcp.run()</code></pre>
+      </div>
+
+      <p>
+        이 서버를 실행하면 세 개의 도구가 등록된다. 각 도구는 Pydantic 모델을 반환하므로,
+        LLM은 반환값의 구조를 정확히 파악하고 후속 질문이나 분석에 활용할 수 있다.
+      </p>
+
+      <h3>서버 실행</h3>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-bash"># 서버 실행
+mcp run stock_server.py
+
+# 또는 개발 모드
+mcp dev stock_server.py</code></pre>
+      </div>
+
+      <div class="info-box info-box--tip">
+        <div class="info-box__title">TIP</div>
+        <p>Pydantic 모델 간 중첩이 가능하다. <code>PortfolioSummary</code>처럼 <code>list[StockPrice]</code>를 필드로 가지면, 관련된 모든 스키마가 자동으로 포함된다. 복잡한 데이터 구조도 자연스럽게 표현할 수 있다.</p>
+      </div>
+    </section>
+
+    <nav class="page-nav"></nav>
+  </main>
+</div>
+
+<script src="../js/nav.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-json.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.js"></script>
+</body>
+</html>

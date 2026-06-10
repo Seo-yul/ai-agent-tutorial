@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Transport - MCP Python SDK 튜토리얼</title>
+  <link rel="stylesheet" href="../css/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.css">
+</head>
+<body>
+
+<header class="site-header">
+  <button class="hamburger" aria-label="메뉴">
+    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+  </button>
+  <a href="../index.html" class="site-header__title"><span>MCP</span> Python SDK 튜토리얼</a>
+  <span class="site-header__badge">v1.12.x</span>
+</header>
+
+<div class="layout">
+  <nav class="sidebar"></nav>
+  <main class="main">
+    <span class="chapter-badge chapter-badge--basic">기본 과정</span>
+    <h1>Chapter 7. Transport</h1>
+    <p class="chapter-subtitle">MCP의 통신 방식인 Transport를 이해하고 선택한다</p>
+
+    <!-- 1. Transport란? -->
+    <section>
+      <h2 id="what-is-transport">7.1 Transport란?</h2>
+      <p>
+        <strong>Transport</strong>는 MCP 서버와 클라이언트 사이의 <strong>통신 계층</strong>이다.
+        프로토콜 메시지(JSON-RPC)를 어떤 방식으로 주고받을지 정의하며, MCP의 핵심 기능과는 독립적으로 동작한다.
+      </p>
+      <p>
+        MCP Python SDK는 현재 두 가지 Transport를 지원한다.
+      </p>
+      <ul>
+        <li><strong>stdio</strong> — 표준 입출력(stdin/stdout)을 통한 통신</li>
+        <li><strong>Streamable HTTP</strong> — HTTP 기반의 스트리밍 통신</li>
+      </ul>
+
+      <div class="diagram">
+┌──────────────────────────────────────────────┐
+│              MCP 아키텍처                      │
+├──────────────────────────────────────────────┤
+│                                              │
+│  ┌──────────┐              ┌──────────┐      │
+│  │ MCP 클라이언트│            │ MCP 서버  │      │
+│  │          │              │          │      │
+│  │  Tools   │  Transport   │  Tools   │      │
+│  │  Resources│ ◀─────────▶ │  Resources│      │
+│  │  Prompts │   (통신 계층)  │  Prompts │      │
+│  └──────────┘              └──────────┘      │
+│                                              │
+│  Transport 종류:                              │
+│  ├─ stdio        : 로컬 프로세스 간 통신         │
+│  └─ Streamable HTTP : 원격 HTTP 기반 통신       │
+│                                              │
+└──────────────────────────────────────────────┘
+      </div>
+    </section>
+
+    <!-- 2. stdio Transport -->
+    <section>
+      <h2 id="stdio">7.2 stdio Transport</h2>
+      <p>
+        <strong>stdio Transport</strong>는 표준 입출력(stdin/stdout)을 통해 메시지를 교환하는 방식이다.
+        클라이언트가 서버 프로세스를 직접 실행하고, 프로세스의 stdin/stdout 파이프를 통해 JSON-RPC 메시지를 주고받는다.
+      </p>
+
+      <h3>사용 방법</h3>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python">from mcp.server.fastmcp import FastMCP
+
+mcp = FastMCP("my-server")
+
+# 도구 등록
+@mcp.tool()
+def hello(name: str) -> str:
+    """인사 메시지를 반환한다"""
+    return f"안녕하세요, {name}!"
+
+# stdio로 실행 (기본값)
+mcp.run()
+
+# 또는 명시적으로 지정
+mcp.run(transport="stdio")</code></pre>
+      </div>
+
+      <h3>Claude Desktop 설정</h3>
+      <p>Claude Desktop에서 stdio 서버를 연결하려면 <code>claude_desktop_config.json</code>에 다음과 같이 설정한다.</p>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-json">{
+  "mcpServers": {
+    "my-server": {
+      "command": "uv",
+      "args": ["run", "/path/to/server.py"]
+    }
+  }
+}</code></pre>
+      </div>
+
+      <h3>stdio의 특징</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>항목</th>
+            <th>설명</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>통신 방식</td>
+            <td>프로세스의 stdin/stdout 파이프</td>
+          </tr>
+          <tr>
+            <td>사용 시나리오</td>
+            <td>로컬 통합, Claude Desktop, IDE 플러그인</td>
+          </tr>
+          <tr>
+            <td>네트워크</td>
+            <td>불필요 (로컬 프로세스 간 통신)</td>
+          </tr>
+          <tr>
+            <td>설정 복잡도</td>
+            <td>매우 낮음</td>
+          </tr>
+          <tr>
+            <td>다중 클라이언트</td>
+            <td>불가 (1:1 연결)</td>
+          </tr>
+          <tr>
+            <td>장점</td>
+            <td>설정이 간단하고 보안 걱정이 적다</td>
+          </tr>
+          <tr>
+            <td>단점</td>
+            <td>원격 접근 불가, 클라이언트당 별도 프로세스 필요</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box info-box--tip">
+        <div class="info-box__title">TIP</div>
+        <p>stdio Transport를 사용할 때는 서버 코드에서 <code>print()</code> 문을 사용하지 않도록 주의한다. stdout이 MCP 통신 채널로 사용되므로, 디버그 출력은 반드시 <code>stderr</code>이나 로깅 모듈을 사용해야 한다.</p>
+      </div>
+    </section>
+
+    <!-- 3. Streamable HTTP Transport -->
+    <section>
+      <h2 id="streamable-http">7.3 Streamable HTTP Transport</h2>
+      <p>
+        <strong>Streamable HTTP Transport</strong>는 HTTP를 기반으로 메시지를 교환하는 방식이다.
+        서버가 HTTP 엔드포인트를 열고, 클라이언트가 HTTP 요청으로 연결한다.
+        원격 서버 배포, 다중 클라이언트 접속이 필요한 경우에 사용한다.
+      </p>
+
+      <h3>기본 사용법</h3>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python">from mcp.server.fastmcp import FastMCP
+
+mcp = FastMCP("my-server")
+
+@mcp.tool()
+def hello(name: str) -> str:
+    """인사 메시지를 반환한다"""
+    return f"안녕하세요, {name}!"
+
+# Streamable HTTP로 실행
+mcp.run(transport="streamable-http", host="0.0.0.0", port=8000)</code></pre>
+      </div>
+
+      <p>위 코드를 실행하면 <code>http://0.0.0.0:8000/mcp</code>에 MCP 엔드포인트가 열린다.</p>
+
+      <h3>설정 옵션</h3>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python"># 모든 옵션을 명시적으로 지정
+mcp.run(
+    transport="streamable-http",
+    host="0.0.0.0",        # 바인딩할 호스트 (기본: "0.0.0.0")
+    port=8000,             # 바인딩할 포트 (기본: 8000)
+    path="/mcp",           # 엔드포인트 경로 (기본: "/mcp")
+)</code></pre>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>옵션</th>
+            <th>기본값</th>
+            <th>설명</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>host</code></td>
+            <td><code>"0.0.0.0"</code></td>
+            <td>서버가 바인딩할 네트워크 인터페이스</td>
+          </tr>
+          <tr>
+            <td><code>port</code></td>
+            <td><code>8000</code></td>
+            <td>서버가 리스닝할 포트 번호</td>
+          </tr>
+          <tr>
+            <td><code>path</code></td>
+            <td><code>"/mcp"</code></td>
+            <td>MCP 엔드포인트 경로</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Streamable HTTP의 특징</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>항목</th>
+            <th>설명</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>통신 방식</td>
+            <td>HTTP POST + Server-Sent Events(SSE)</td>
+          </tr>
+          <tr>
+            <td>사용 시나리오</td>
+            <td>원격 배포, 웹 서비스, 클라우드 환경</td>
+          </tr>
+          <tr>
+            <td>네트워크</td>
+            <td>필요</td>
+          </tr>
+          <tr>
+            <td>설정 복잡도</td>
+            <td>중간</td>
+          </tr>
+          <tr>
+            <td>다중 클라이언트</td>
+            <td>가능</td>
+          </tr>
+          <tr>
+            <td>장점</td>
+            <td>원격 접근 가능, 다중 클라이언트 지원, 표준 HTTP 인프라 활용</td>
+          </tr>
+          <tr>
+            <td>단점</td>
+            <td>네트워크 설정 필요, 보안(인증/HTTPS) 별도 구성 필요</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box info-box--warning">
+        <div class="info-box__title">WARNING</div>
+        <p><strong>SSE(Server-Sent Events) Transport는 deprecated되었으며 Streamable HTTP로 대체되었다.</strong> 기존에 <code>transport="sse"</code>를 사용하던 코드는 <code>transport="streamable-http"</code>로 마이그레이션해야 한다.</p>
+      </div>
+    </section>
+
+    <!-- 4. Transport 선택 가이드 -->
+    <section>
+      <h2 id="comparison">7.4 Transport 선택 가이드</h2>
+      <p>
+        어떤 Transport를 선택할지는 서버의 배포 환경과 요구사항에 따라 결정한다.
+        다음 비교표를 참고하여 적합한 Transport를 선택하자.
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>항목</th>
+            <th>stdio</th>
+            <th>Streamable HTTP</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>사용 시나리오</td>
+            <td>로컬 통합</td>
+            <td>원격 배포</td>
+          </tr>
+          <tr>
+            <td>설정 복잡도</td>
+            <td>낮음</td>
+            <td>중간</td>
+          </tr>
+          <tr>
+            <td>네트워크</td>
+            <td>불필요</td>
+            <td>필요</td>
+          </tr>
+          <tr>
+            <td>다중 클라이언트</td>
+            <td>불가</td>
+            <td>가능</td>
+          </tr>
+          <tr>
+            <td>보안</td>
+            <td>프로세스 격리</td>
+            <td>별도 인증 구성 필요</td>
+          </tr>
+          <tr>
+            <td>배포</td>
+            <td>로컬 전용</td>
+            <td>Docker, 클라우드 등 유연</td>
+          </tr>
+          <tr>
+            <td>대표 클라이언트</td>
+            <td>Claude Desktop, IDE</td>
+            <td>웹 앱, 원격 클라이언트</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="diagram">
+Transport 선택 의사결정 트리:
+
+서버를 어디서 실행하는가?
+├── 로컬 (같은 머신)
+│   └── stdio 선택 ✓
+│       • Claude Desktop, IDE 플러그인
+│       • 설정 간단, 보안 걱정 적음
+│
+└── 원격 (다른 머신 / 클라우드)
+    └── Streamable HTTP 선택 ✓
+        • 웹 서비스, API 서버
+        • 다중 클라이언트 지원 필요
+        • HTTPS + 인증 설정 권장
+      </div>
+
+      <div class="info-box info-box--tip">
+        <div class="info-box__title">TIP</div>
+        <p>개발 중에는 stdio를 사용하고, 프로덕션 배포 시에는 Streamable HTTP로 전환하는 전략이 일반적이다. MCP 서버 코드를 변경할 필요 없이 <code>mcp.run()</code>의 <code>transport</code> 파라미터만 바꾸면 된다.</p>
+      </div>
+    </section>
+
+    <!-- 5. Stateless HTTP 모드 -->
+    <section>
+      <h2 id="stateless">7.5 Stateless HTTP 모드</h2>
+      <p>
+        Streamable HTTP Transport는 기본적으로 <strong>세션 상태를 유지</strong>한다. 클라이언트와 서버 간의 연결이 유지되는 동안 세션 정보가 보존된다.
+        그러나 특정 상황에서는 <strong>상태 비유지(Stateless) 모드</strong>가 필요하다.
+      </p>
+
+      <h3>Stateless 모드란?</h3>
+      <p>
+        Stateless 모드에서는 각 HTTP 요청이 독립적으로 처리된다. 서버가 클라이언트의 세션 상태를 유지하지 않으므로, 수평 확장(scale-out)이 용이하다.
+      </p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python">from mcp.server.fastmcp import FastMCP
+
+mcp = FastMCP("stateless-server")
+
+@mcp.tool()
+def calculate(expression: str) -> str:
+    """수식을 계산한다 (상태 비유지)"""
+    try:
+        # 주의: 실제 프로덕션에서는 eval을 사용하지 않는다
+        result = eval(expression, {"__builtins__": {}})
+        return f"{expression} = {result}"
+    except Exception as e:
+        return f"계산 오류: {e}"
+
+# Stateless HTTP 모드로 실행
+mcp.run(
+    transport="streamable-http",
+    host="0.0.0.0",
+    port=8000,
+    stateless_http=True,
+)</code></pre>
+      </div>
+
+      <h3>Stateless 모드의 사용 시나리오</h3>
+      <ul>
+        <li><strong>로드 밸런서 뒤에서 실행</strong> — 여러 서버 인스턴스 중 어느 것이 요청을 처리해도 동일한 결과를 보장한다</li>
+        <li><strong>서버리스 환경</strong> — AWS Lambda, Google Cloud Functions 등 상태를 유지할 수 없는 환경</li>
+        <li><strong>단순 도구 서버</strong> — 이전 요청 컨텍스트가 불필요한 독립적인 도구만 제공하는 서버</li>
+      </ul>
+
+      <div class="diagram">
+Stateful vs Stateless 비교:
+
+Stateful (기본):
+  요청 1 ──▶ 세션 생성 ──▶ 상태 저장
+  요청 2 ──▶ 세션 조회 ──▶ 상태 활용   (같은 서버 인스턴스)
+  요청 3 ──▶ 세션 조회 ──▶ 상태 활용
+
+Stateless:
+  요청 1 ──▶ 처리 ──▶ 응답   (서버 A)
+  요청 2 ──▶ 처리 ──▶ 응답   (서버 B)  ← 다른 인스턴스도 가능
+  요청 3 ──▶ 처리 ──▶ 응답   (서버 C)
+      </div>
+
+      <div class="info-box info-box--info">
+        <div class="info-box__title">INFO</div>
+        <p>Stateless 모드에서는 세션 기반의 기능(예: 서버 측 상태 관리, 구독 등)이 제한된다. 서버의 도구가 모두 독립적으로 동작 가능한 경우에만 사용한다.</p>
+      </div>
+    </section>
+
+    <nav class="page-nav"></nav>
+  </main>
+</div>
+
+<script src="../js/nav.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-json.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.js"></script>
+</body>
+</html>

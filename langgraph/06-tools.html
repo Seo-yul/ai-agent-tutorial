@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tool 통합 - AI Agent 개발 튜토리얼</title>
+  <link rel="stylesheet" href="../css/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.css">
+</head>
+<body>
+
+<header class="site-header">
+  <button class="hamburger" aria-label="메뉴">
+    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+  </button>
+  <a href="../index.html" class="site-header__title"><span>AI Agent</span> 개발 튜토리얼</a>
+</header>
+
+<div class="layout">
+  <nav class="sidebar"></nav>
+  <main class="main">
+    <span class="chapter-badge chapter-badge--lg-basic">기본 과정</span>
+    <h1>Tool 통합</h1>
+    <p class="chapter-subtitle">LLM에 도구를 연결하여 외부 세계와 상호작용한다</p>
+
+    <!-- 1. Tool Calling이란? -->
+    <section>
+      <h2>Tool Calling이란?</h2>
+      <p>
+        LLM은 학습 데이터에 기반하여 텍스트를 생성하지만, 그 자체로는 <strong>외부 세계와 상호작용할 수 없다</strong>.
+        실시간 날씨를 조회하거나, 데이터베이스를 검색하거나, 이메일을 보내는 것은 LLM만으로는 불가능하다.
+      </p>
+      <p>
+        <strong>Tool Calling</strong>은 LLM이 외부 함수(도구)를 호출하여 학습 데이터 밖의 정보를 얻거나,
+        실제 행동을 수행할 수 있게 하는 메커니즘이다.
+        ChatGPT의 함수 호출(Function Calling), Claude의 도구 사용(Tool Use)이 모두 같은 개념이다.
+      </p>
+
+      <div class="info-box info-box--tip">
+        <div class="info-box__title">TIP</div>
+        <p>
+          Tool Calling의 작동 방식을 간단히 정리하면 다음과 같다:
+        </p>
+        <ol>
+          <li>LLM에게 "사용 가능한 도구 목록"을 알려준다 (이름, 설명, 파라미터 스키마)</li>
+          <li>LLM이 사용자 질문을 분석하고, 도구가 필요하다고 판단하면 <strong>도구 호출 요청</strong>을 생성한다</li>
+          <li>애플리케이션이 실제로 도구를 실행하고 결과를 LLM에게 돌려준다</li>
+          <li>LLM이 도구 결과를 바탕으로 최종 답변을 생성한다</li>
+        </ol>
+      </div>
+
+      <div class="diagram">
+사용자 질문
+    │
+    ▼
+┌─────────┐   "이 도구를 호출해줘"   ┌──────────────┐
+│   LLM   │ ──────────────────────→ │ 도구 실행기  │
+│         │ ←────────────────────── │ (ToolNode)   │
+└─────────┘   "결과는 이것이다"      └──────────────┘
+    │
+    ▼
+최종 답변
+      </div>
+    </section>
+
+    <!-- 2. 도구 정의 -->
+    <section>
+      <h2>도구 정의</h2>
+      <p>
+        LangChain에서 도구를 정의하는 가장 간단한 방법은 <code>@tool</code> 데코레이터이다.
+        함수에 데코레이터를 붙이면 LangChain이 자동으로 도구 스키마를 생성한다.
+      </p>
+
+      <h3>기본 도구 정의</h3>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python">from langchain_core.tools import tool
+
+
+@tool
+def search_web(query: str) -> str:
+    """웹에서 정보를 검색한다.
+
+    Args:
+        query: 검색할 키워드 또는 질문
+    """
+    # 실제로는 검색 API(Google, Tavily 등) 호출
+    return f"'{query}'에 대한 검색 결과: 관련 정보를 찾았다."
+
+
+@tool
+def calculate(expression: str) -> str:
+    """수학 표현식을 계산한다.
+
+    Args:
+        expression: 계산할 수학 표현식 (예: "2 + 3 * 4")
+    """
+    try:
+        # 안전한 계산을 위해 __builtins__ 제한
+        result = eval(expression, {"__builtins__": {}})
+        return str(result)
+    except Exception as e:
+        return f"계산 오류: {e}"</code></pre>
+      </div>
+
+      <div class="info-box info-box--tip">
+        <div class="info-box__title">TIP</div>
+        <p>
+          <strong>docstring이 매우 중요하다.</strong>
+          LLM은 docstring을 읽고 어떤 상황에서 이 도구를 사용해야 하는지 판단한다.
+          도구의 역할, 파라미터의 의미, 반환값의 형태를 명확하게 기술해야 한다.
+        </p>
+      </div>
+
+      <h3>복잡한 도구 — 여러 파라미터</h3>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python">from langchain_core.tools import tool
+from typing import Optional
+
+
+@tool
+def get_weather(city: str, unit: str = "celsius") -> str:
+    """특정 도시의 현재 날씨 정보를 조회한다.
+
+    Args:
+        city: 날씨를 조회할 도시 이름 (예: "서울", "부산")
+        unit: 온도 단위. "celsius" 또는 "fahrenheit" (기본값: celsius)
+    """
+    # 실제로는 날씨 API 호출
+    weather_data = {
+        "서울": {"temp": 25, "condition": "맑음"},
+        "부산": {"temp": 28, "condition": "구름 조금"},
+    }
+
+    data = weather_data.get(city, {"temp": 20, "condition": "정보 없음"})
+    temp = data["temp"]
+
+    if unit == "fahrenheit":
+        temp = temp * 9 / 5 + 32
+
+    return f"{city}의 현재 날씨: {data['condition']}, 온도: {temp}°{'F' if unit == 'fahrenheit' else 'C'}"
+
+
+@tool
+def send_email(to: str, subject: str, body: str) -> str:
+    """이메일을 발송한다.
+
+    Args:
+        to: 수신자 이메일 주소
+        subject: 이메일 제목
+        body: 이메일 본문 내용
+    """
+    # 실제로는 이메일 API 호출
+    return f"이메일 발송 완료: {to}에게 '{subject}' 전송됨"</code></pre>
+      </div>
+
+      <h3>도구의 스키마 확인</h3>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python"># 도구의 이름, 설명, 파라미터 스키마 확인
+print(search_web.name)
+# "search_web"
+
+print(search_web.description)
+# "웹에서 정보를 검색한다."
+
+print(search_web.args_schema.schema())
+# {'properties': {'query': {'description': '검색할 키워드 또는 질문',
+#                            'title': 'Query',
+#                            'type': 'string'}},
+#  'required': ['query'],
+#  'title': 'search_webSchema',
+#  'type': 'object'}</code></pre>
+      </div>
+      <p>
+        LangChain은 함수의 타입 힌트와 docstring을 파싱하여 자동으로 JSON Schema를 생성한다.
+        이 스키마가 LLM에게 전달되어, LLM이 올바른 형식으로 도구를 호출할 수 있게 된다.
+      </p>
+    </section>
+
+    <!-- 3. LLM에 도구 바인딩 -->
+    <section>
+      <h2>LLM에 도구 바인딩</h2>
+      <p>
+        도구를 정의했으면, LLM에게 이 도구들을 사용할 수 있다고 알려줘야 한다.
+        LangChain에서는 <code>bind_tools</code> 메서드로 이를 수행한다.
+      </p>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python">from langchain_anthropic import ChatAnthropic
+
+# LLM 초기화
+model = ChatAnthropic(model="claude-sonnet-4-20250514")
+
+# 도구 목록
+tools = [search_web, calculate, get_weather]
+
+# LLM에 도구 바인딩
+model_with_tools = model.bind_tools(tools)</code></pre>
+      </div>
+      <p>
+        <code>bind_tools</code>를 호출하면, 이후 이 모델을 호출할 때마다
+        도구 정의가 함께 전달된다. LLM은 사용자의 질문에 따라
+        도구를 호출할지, 직접 답변할지를 스스로 판단한다.
+      </p>
+
+      <h3>도구 바인딩 후 호출 테스트</h3>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python"># 도구가 필요한 질문
+response = model_with_tools.invoke("서울 날씨 어때?")
+print(response.tool_calls)
+# [{'name': 'get_weather',
+#   'args': {'city': '서울'},
+#   'id': 'call_xxx',
+#   'type': 'tool_call'}]
+
+# 도구가 필요 없는 질문
+response = model_with_tools.invoke("안녕하세요!")
+print(response.tool_calls)
+# []  ← 빈 리스트, 도구 호출 없음
+print(response.content)
+# "안녕하세요! 무엇을 도와드릴까요?"</code></pre>
+      </div>
+
+      <div class="info-box info-box--tip">
+        <div class="info-box__title">TIP</div>
+        <p>
+          <code>tool_calls</code>는 LLM이 "이 도구를 이 인자로 호출해달라"는 <strong>요청</strong>이다.
+          실제 도구 실행은 아직 일어나지 않았다.
+          도구를 실행하고 결과를 LLM에게 다시 전달하는 것은 <strong>우리의 코드</strong>가 담당한다.
+          LangGraph의 <code>ToolNode</code>가 바로 이 역할을 한다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 4. ToolNode -->
+    <section>
+      <h2>ToolNode</h2>
+      <p>
+        LangGraph는 도구 실행을 위한 사전 구축 노드인 <code>ToolNode</code>를 제공한다.
+        <code>ToolNode</code>는 LLM이 생성한 <code>tool_calls</code>를 파싱하여
+        해당하는 도구를 자동으로 실행하고, 결과를 메시지로 반환한다.
+      </p>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python">from langgraph.prebuilt import ToolNode
+
+# 도구 목록으로 ToolNode 생성
+tool_node = ToolNode(tools)</code></pre>
+      </div>
+
+      <h3>ToolNode의 동작 과정</h3>
+      <div class="diagram">
+AIMessage (tool_calls 포함)
+    │
+    ▼
+┌───────────────────────────────────────┐
+│              ToolNode                 │
+│                                       │
+│  1. AIMessage에서 tool_calls 추출     │
+│  2. tool_calls의 name으로 도구 매칭   │
+│  3. args를 인자로 도구 함수 실행      │
+│  4. 결과를 ToolMessage로 래핑         │
+└───────────────────────────────────────┘
+    │
+    ▼
+ToolMessage (도구 실행 결과)
+      </div>
+      <p>
+        <code>ToolNode</code>의 입력은 <code>messages</code> 리스트이다.
+        마지막 메시지가 <code>AIMessage</code>이고 <code>tool_calls</code>가 있으면,
+        각 도구 호출을 실행하고 결과를 <code>ToolMessage</code>로 변환한다.
+      </p>
+
+      <div class="info-box info-box--tip">
+        <div class="info-box__title">TIP</div>
+        <p>
+          <code>ToolMessage</code>는 LangChain의 메시지 타입 중 하나로,
+          도구 실행 결과를 LLM에게 전달하기 위한 형식이다.
+          <code>tool_call_id</code>를 포함하여 어떤 도구 호출에 대한 응답인지를 LLM이 추적할 수 있다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 5. 도구 호출 그래프 구축 -->
+    <section>
+      <h2>도구 호출 그래프 구축</h2>
+      <p>
+        이제 핵심이다. LLM 노드와 ToolNode를 연결하여
+        <strong>"LLM이 도구를 호출하고, 결과를 받아 답변하는"</strong> 완전한 그래프를 만든다.
+      </p>
+
+      <h3>MessagesState</h3>
+      <p>
+        도구 호출 패턴에서는 <code>MessagesState</code>를 사용한다.
+        이것은 LangGraph가 제공하는 사전 정의 State로, <code>messages</code> 리스트를 자동으로 관리한다.
+      </p>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python">from langgraph.graph import MessagesState
+
+# MessagesState는 내부적으로 이렇게 정의되어 있다:
+# class MessagesState(TypedDict):
+#     messages: Annotated[list[AnyMessage], add_messages]
+#
+# add_messages reducer가 메시지를 누적시킨다</code></pre>
+      </div>
+
+      <h3>전체 그래프 코드</h3>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python">from langchain_anthropic import ChatAnthropic
+from langchain_core.tools import tool
+from langgraph.graph import StateGraph, MessagesState, START, END
+from langgraph.prebuilt import ToolNode
+
+
+# ─── 도구 정의 ───
+@tool
+def search_web(query: str) -> str:
+    """웹에서 정보를 검색한다."""
+    return f"'{query}' 검색 결과: 관련 정보를 찾았다."
+
+
+@tool
+def calculate(expression: str) -> str:
+    """수학 표현식을 계산한다."""
+    try:
+        result = eval(expression, {"__builtins__": {}})
+        return str(result)
+    except Exception as e:
+        return f"계산 오류: {e}"
+
+
+# ─── LLM + 도구 바인딩 ───
+model = ChatAnthropic(model="claude-sonnet-4-20250514")
+tools = [search_web, calculate]
+model_with_tools = model.bind_tools(tools)
+
+
+# ─── 노드 함수 ───
+def call_model(state: MessagesState) -> dict:
+    """LLM을 호출한다. 도구가 바인딩되어 있으므로 필요 시 도구 호출을 생성한다."""
+    response = model_with_tools.invoke(state["messages"])
+    return {"messages": [response]}
+
+
+def should_use_tool(state: MessagesState) -> str:
+    """마지막 메시지에 tool_calls가 있으면 도구 노드로, 없으면 종료한다."""
+    last_message = state["messages"][-1]
+    if last_message.tool_calls:
+        return "tools"
+    return END
+
+
+# ─── 그래프 구축 ───
+graph = StateGraph(MessagesState)
+
+# 노드 등록
+graph.add_node("agent", call_model)
+graph.add_node("tools", ToolNode(tools))
+
+# 엣지 연결
+graph.add_edge(START, "agent")
+
+# agent 노드 이후 조건부 분기
+graph.add_conditional_edges("agent", should_use_tool, {
+    "tools": "tools",
+    END: END,
+})
+
+# 도구 실행 결과를 다시 LLM에게 전달
+graph.add_edge("tools", "agent")
+
+# 컴파일
+app = graph.compile()</code></pre>
+      </div>
+
+      <p>
+        이 그래프의 핵심은 <code>"tools" → "agent"</code> 엣지이다.
+        도구 실행 결과가 다시 LLM에게 전달되어,
+        LLM이 결과를 분석하고 최종 답변을 만들거나 추가 도구를 호출한다.
+      </p>
+    </section>
+
+    <!-- 6. 도구 호출 다이어그램 -->
+    <section>
+      <h2>도구 호출 흐름</h2>
+      <p>
+        Agent와 Tools 사이에 루프가 형성되는 것이 핵심이다.
+        LLM이 더 이상 도구를 호출하지 않으면 루프가 끝나고 최종 답변이 반환된다.
+      </p>
+      <div class="diagram">
+┌───────┐
+│ START │
+└───┬───┘
+    ▼
+┌─────────┐
+│  agent  │ ← LLM 호출 (도구 바인딩됨)
+└────┬────┘
+     │
+     ├── tool_calls 있음 ──→ ┌─────────┐
+     │                       │  tools  │ ← 도구 실행 (ToolNode)
+     │                       └────┬────┘
+     │                            │
+     │      도구 결과를 메시지에   │
+     │      추가하고 다시 agent로  │
+     │                            │
+     │   ┌────────────────────────┘
+     │   │
+     │   ▼
+     │  agent (다시 LLM 호출)
+     │   │
+     │   ├── tool_calls 있음 → tools → agent → ... (반복)
+     │   │
+     │   └── tool_calls 없음 → END
+     │
+     └── tool_calls 없음 ──→ ┌─────┐
+                             │ END │
+                             └─────┘
+      </div>
+
+      <h3>실행 예제</h3>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python"># 도구가 필요한 질문
+result = app.invoke({
+    "messages": [{"role": "user", "content": "15 * 23 + 7 계산해줘"}]
+})
+
+# 메시지 흐름 확인
+for msg in result["messages"]:
+    print(f"[{msg.type}]", end=" ")
+    if hasattr(msg, "tool_calls") and msg.tool_calls:
+        print(f"도구 호출: {msg.tool_calls}")
+    elif hasattr(msg, "content"):
+        content = msg.content if isinstance(msg.content, str) else str(msg.content)
+        print(content[:100])
+
+# 출력 예시:
+# [human] 15 * 23 + 7 계산해줘
+# [ai] 도구 호출: [{'name': 'calculate', 'args': {'expression': '15 * 23 + 7'}, ...}]
+# [tool] 352
+# [ai] 15 × 23 + 7의 계산 결과는 352이다.</code></pre>
+      </div>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python"># 도구가 필요 없는 질문
+result = app.invoke({
+    "messages": [{"role": "user", "content": "안녕! 오늘 기분이 어때?"}]
+})
+
+# LLM이 직접 답변 (도구 호출 없음)
+print(result["messages"][-1].content)
+# "안녕하세요! 저는 AI라서 기분이라는 것은 없지만..."</code></pre>
+      </div>
+    </section>
+
+    <!-- 7. 메시지 타입 이해 -->
+    <section>
+      <h2>메시지 타입 이해</h2>
+      <p>
+        도구 호출 패턴에서는 4가지 메시지 타입이 사용된다.
+        각 타입의 역할을 이해하면 디버깅이 훨씬 수월해진다.
+      </p>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python">from langchain_core.messages import (
+    HumanMessage,    # 사용자 입력
+    AIMessage,       # LLM 응답 (도구 호출 또는 텍스트)
+    ToolMessage,     # 도구 실행 결과
+    SystemMessage,   # 시스템 프롬프트
+)
+
+# 전체 메시지 흐름 예시:
+# 1. HumanMessage:  "서울 날씨 알려줘"
+# 2. AIMessage:     tool_calls=[{name: "get_weather", args: {city: "서울"}}]
+# 3. ToolMessage:   "서울의 현재 날씨: 맑음, 온도: 25°C"
+# 4. AIMessage:     "서울의 현재 날씨는 맑고, 기온은 25도입니다."</code></pre>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>메시지 타입</th>
+            <th>발신자</th>
+            <th>역할</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>HumanMessage</code></td>
+            <td>사용자</td>
+            <td>사용자의 질문 또는 지시</td>
+          </tr>
+          <tr>
+            <td><code>AIMessage</code></td>
+            <td>LLM</td>
+            <td>텍스트 응답 또는 도구 호출 요청</td>
+          </tr>
+          <tr>
+            <td><code>ToolMessage</code></td>
+            <td>시스템 (ToolNode)</td>
+            <td>도구 실행 결과</td>
+          </tr>
+          <tr>
+            <td><code>SystemMessage</code></td>
+            <td>개발자</td>
+            <td>LLM의 역할이나 행동 규칙 정의</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- 8. 실전 예제: 검색 + 계산 에이전트 -->
+    <section>
+      <h2>실전 예제: 검색 + 계산 에이전트</h2>
+      <p>
+        웹 검색과 계산기 도구를 갖춘 에이전트를 완성해보자.
+        사용자의 질문에 따라 적절한 도구를 선택하고,
+        결과를 종합하여 자연스러운 답변을 생성한다.
+      </p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python">from langchain_anthropic import ChatAnthropic
+from langchain_core.tools import tool
+from langchain_core.messages import HumanMessage, SystemMessage
+from langgraph.graph import StateGraph, MessagesState, START, END
+from langgraph.prebuilt import ToolNode
+
+
+# ─── 도구 정의 ───
+@tool
+def search_web(query: str) -> str:
+    """웹에서 최신 정보를 검색한다. 실시간 데이터가 필요할 때 사용한다.
+
+    Args:
+        query: 검색할 키워드 또는 질문
+    """
+    # 시뮬레이션 — 실제로는 Tavily, Google 등의 검색 API 사용
+    search_db = {
+        "파이썬 최신 버전": "Python 3.13이 2024년 10월에 출시되었다. 주요 기능으로 free-threaded 모드가 추가되었다.",
+        "서울 인구": "서울의 인구는 약 950만 명이다 (2024년 기준).",
+        "비트코인 시세": "비트코인 현재 시세: 약 60,000 USD (시뮬레이션 데이터).",
+    }
+
+    for key, value in search_db.items():
+        if any(word in query for word in key.split()):
+            return value
+
+    return f"'{query}'에 대한 검색 결과: 관련 정보를 찾지 못했다."
+
+
+@tool
+def calculate(expression: str) -> str:
+    """수학 표현식을 계산한다. 사칙연산, 거듭제곱 등을 지원한다.
+
+    Args:
+        expression: 계산할 수학 표현식 (예: "2 + 3 * 4", "2 ** 10")
+    """
+    # 안전한 내장 함수만 허용
+    allowed_builtins = {
+        "abs": abs, "round": round, "min": min, "max": max,
+        "pow": pow, "sum": sum, "len": len,
+    }
+    try:
+        result = eval(expression, {"__builtins__": allowed_builtins})
+        return f"{expression} = {result}"
+    except Exception as e:
+        return f"계산 오류: {expression} → {e}"
+
+
+@tool
+def get_current_time() -> str:
+    """현재 날짜와 시간을 반환한다."""
+    from datetime import datetime
+    now = datetime.now()
+    return f"현재 시간: {now.strftime('%Y년 %m월 %d일 %H시 %M분')}"
+
+
+# ─── LLM 설정 ───
+model = ChatAnthropic(model="claude-sonnet-4-20250514")
+tools = [search_web, calculate, get_current_time]
+model_with_tools = model.bind_tools(tools)
+
+
+# ─── 노드 정의 ───
+def agent_node(state: MessagesState) -> dict:
+    """LLM을 호출한다."""
+    # 시스템 메시지가 없으면 추가
+    messages = state["messages"]
+    has_system = any(
+        isinstance(m, SystemMessage) or
+        (hasattr(m, "type") and m.type == "system")
+        for m in messages
+    )
+    if not has_system:
+        system_msg = SystemMessage(
+            content=(
+                "당신은 유능한 AI 어시스턴트이다. "
+                "사용자의 질문에 정확하게 답변하기 위해 "
+                "제공된 도구를 적극적으로 활용한다. "
+                "한국어로 답변한다."
+            )
+        )
+        messages = [system_msg] + messages
+
+    response = model_with_tools.invoke(messages)
+    return {"messages": [response]}
+
+
+def should_use_tool(state: MessagesState) -> str:
+    """도구 호출이 필요한지 판단한다."""
+    last_message = state["messages"][-1]
+    if last_message.tool_calls:
+        return "tools"
+    return END
+
+
+# ─── 그래프 구축 ───
+graph = StateGraph(MessagesState)
+
+graph.add_node("agent", agent_node)
+graph.add_node("tools", ToolNode(tools))
+
+graph.add_edge(START, "agent")
+graph.add_conditional_edges("agent", should_use_tool, {
+    "tools": "tools",
+    END: END,
+})
+graph.add_edge("tools", "agent")
+
+app = graph.compile()
+
+
+# ─── 실행 및 결과 확인 ───
+def run_agent(question: str):
+    """에이전트를 실행하고 결과를 출력한다."""
+    print(f"\n{'='*60}")
+    print(f"질문: {question}")
+    print(f"{'='*60}")
+
+    result = app.invoke({
+        "messages": [HumanMessage(content=question)]
+    })
+
+    for msg in result["messages"]:
+        if msg.type == "human":
+            print(f"\n[사용자] {msg.content}")
+        elif msg.type == "ai":
+            if msg.tool_calls:
+                for tc in msg.tool_calls:
+                    print(f"\n[AI → 도구 호출] {tc['name']}({tc['args']})")
+            if msg.content:
+                content = msg.content if isinstance(msg.content, str) else str(msg.content)
+                if content.strip():
+                    print(f"\n[AI 답변] {content}")
+        elif msg.type == "tool":
+            print(f"\n[도구 결과] {msg.content}")
+
+    return result
+
+
+# 테스트
+run_agent("2의 10승은 얼마야?")
+run_agent("파이썬 최신 버전이 뭐야?")
+run_agent("지금 몇 시야?")
+run_agent("서울 인구가 몇 명이고, 부산 인구의 2배를 계산해줘")</code></pre>
+      </div>
+
+      <h3>실행 결과 예시</h3>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-bash">============================================================
+질문: 2의 10승은 얼마야?
+============================================================
+
+[사용자] 2의 10승은 얼마야?
+
+[AI → 도구 호출] calculate({'expression': '2 ** 10'})
+
+[도구 결과] 2 ** 10 = 1024
+
+[AI 답변] 2의 10승은 **1024**이다.</code></pre>
+      </div>
+
+      <div class="info-box info-box--tip">
+        <div class="info-box__title">TIP</div>
+        <p>
+          LLM은 하나의 턴에서 <strong>여러 도구를 동시에 호출</strong>할 수도 있다.
+          예를 들어 "서울 인구를 검색하고, 그 값의 2배를 계산해줘"라는 질문에 대해
+          LLM이 먼저 <code>search_web</code>을 호출하고, 그 결과를 받은 뒤
+          <code>calculate</code>를 호출하는 <strong>다단계 도구 사용</strong>이 자동으로 이루어진다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 9. 에러 처리 -->
+    <section>
+      <h2>도구 에러 처리</h2>
+      <p>
+        도구가 예외를 발생시키면 에이전트가 중단될 수 있다.
+        안정적인 에이전트를 만들려면 도구 내부에서 예외를 적절히 처리해야 한다.
+      </p>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python">@tool
+def safe_calculate(expression: str) -> str:
+    """수학 표현식을 안전하게 계산한다."""
+    try:
+        # 위험한 함수 차단
+        forbidden = ["import", "exec", "eval", "__", "open", "os"]
+        if any(f in expression for f in forbidden):
+            return "오류: 허용되지 않는 표현식이다."
+
+        result = eval(expression, {"__builtins__": {}})
+        return f"결과: {result}"
+    except ZeroDivisionError:
+        return "오류: 0으로 나눌 수 없다."
+    except SyntaxError:
+        return f"오류: '{expression}'은 올바른 수학 표현식이 아니다."
+    except Exception as e:
+        return f"오류: 계산 중 문제가 발생했다. ({type(e).__name__}: {e})"</code></pre>
+      </div>
+
+      <div class="info-box info-box--tip">
+        <div class="info-box__title">TIP</div>
+        <p>
+          도구가 에러 메시지를 반환하면, LLM은 이를 읽고 <strong>다른 접근 방식을 시도</strong>하거나
+          사용자에게 오류 상황을 설명할 수 있다.
+          따라서 예외를 무조건 삼키지 말고, <strong>의미 있는 에러 메시지</strong>를 반환하는 것이 좋다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 10. 핵심 정리 -->
+    <section>
+      <h2>핵심 정리</h2>
+      <ul>
+        <li><code>@tool</code> 데코레이터로 도구를 정의한다. docstring과 타입 힌트가 스키마가 된다.</li>
+        <li><code>model.bind_tools(tools)</code>로 LLM에 도구를 바인딩한다.</li>
+        <li><code>ToolNode(tools)</code>는 LLM의 도구 호출 요청을 실제로 실행한다.</li>
+        <li><code>agent → tools → agent</code> 루프가 도구 호출 패턴의 핵심이다.</li>
+        <li>LLM은 도구가 필요 없으면 직접 답변하고, 필요하면 <code>tool_calls</code>를 생성한다.</li>
+        <li>도구 내부에서 예외를 적절히 처리하여 에이전트의 안정성을 확보한다.</li>
+      </ul>
+    </section>
+
+    <nav class="page-nav"></nav>
+  </main>
+</div>
+
+<script src="../js/nav.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-json.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.js"></script>
+</body>
+</html>

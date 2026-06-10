@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>환경 설정 - AI Agent 개발 튜토리얼</title>
+  <link rel="stylesheet" href="../css/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.css">
+</head>
+<body>
+
+<header class="site-header">
+  <button class="hamburger" aria-label="메뉴">
+    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+  </button>
+  <a href="../index.html" class="site-header__title"><span>AI Agent</span> 개발 튜토리얼</a>
+</header>
+
+<div class="layout">
+  <nav class="sidebar"></nav>
+  <main class="main">
+    <span class="chapter-badge chapter-badge--lg-basic">기본 과정</span>
+    <h1>환경 설정</h1>
+    <p class="chapter-subtitle">LangGraph 개발 환경을 구성한다</p>
+
+    <!-- 섹션 1: 사전 요구사항 -->
+    <h2>사전 요구사항</h2>
+
+    <p>
+      LangGraph 개발을 시작하기 전에 다음 사항을 확인한다.
+    </p>
+
+    <ul>
+      <li><strong>Python 3.10 이상:</strong> LangGraph는 Python 3.10+를 요구한다.
+        <code>TypedDict</code>의 고급 기능과 타입 힌트를 활용하기 때문이다.</li>
+      <li><strong>패키지 관리자:</strong> <code>uv</code>(권장) 또는 <code>pip</code>을 사용한다.</li>
+      <li><strong>LLM API 키:</strong> Anthropic(Claude) 또는 OpenAI API 키가 필요하다.</li>
+    </ul>
+
+    <p>Python 버전을 확인한다:</p>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-bash"># Python 버전 확인
+python --version
+# Python 3.12.x (3.10 이상이면 OK)</code></pre>
+    </div>
+
+    <div class="info-box info-box--warning">
+      <div class="info-box__title">WARNING</div>
+      <p>
+        Python 3.9 이하에서는 LangGraph가 정상적으로 동작하지 않는다.
+        반드시 3.10 이상의 버전을 사용해야 한다.
+        <code>pyenv</code>나 <code>conda</code>를 사용하여 적절한 Python 버전을 설치할 수 있다.
+      </p>
+    </div>
+
+    <!-- 섹션 2: 프로젝트 생성 -->
+    <h2>프로젝트 생성</h2>
+
+    <p>
+      새로운 프로젝트를 생성하고 필요한 패키지를 설치한다.
+      <strong>uv</strong>를 사용하는 방법과 <strong>pip</strong>을 사용하는 방법 두 가지를 안내한다.
+    </p>
+
+    <h3>방법 1: uv 사용 (권장)</h3>
+
+    <p>
+      <code>uv</code>는 Rust로 작성된 초고속 Python 패키지 관리자이다.
+      pip보다 10~100배 빠른 설치 속도를 제공하며,
+      프로젝트 단위의 가상 환경을 자동으로 관리해 준다.
+    </p>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-bash"># uv가 설치되어 있지 않다면 먼저 설치
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# 새 프로젝트 생성
+uv init langgraph-demo
+cd langgraph-demo
+
+# 필요한 패키지 추가
+uv add langgraph langchain-anthropic langchain-openai langchain-core
+
+# 개발 편의를 위한 추가 패키지
+uv add python-dotenv ipython</code></pre>
+    </div>
+
+    <p>
+      <code>uv init</code>은 프로젝트 디렉토리를 생성하고
+      <code>pyproject.toml</code>과 가상 환경을 자동으로 설정한다.
+      <code>uv add</code>는 패키지를 설치하고 <code>pyproject.toml</code>에 의존성을 기록한다.
+    </p>
+
+    <h3>방법 2: pip 사용</h3>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-bash"># 프로젝트 디렉토리 생성
+mkdir langgraph-demo
+cd langgraph-demo
+
+# 가상 환경 생성 및 활성화
+python -m venv .venv
+source .venv/bin/activate  # macOS/Linux
+# .venv\Scripts\activate   # Windows
+
+# 패키지 설치
+pip install langgraph langchain-anthropic langchain-openai langchain-core
+
+# 개발 편의를 위한 추가 패키지
+pip install python-dotenv ipython</code></pre>
+    </div>
+
+    <div class="info-box info-box--tip">
+      <div class="info-box__title">TIP</div>
+      <p>
+        <code>uv</code>를 처음 사용한다면 이번 기회에 도입해 보는 것을 권장한다.
+        설치 속도가 압도적으로 빠르고, 가상 환경 관리가 자동화되어
+        개발 경험이 크게 향상된다.
+        <code>uv run python script.py</code>처럼
+        가상 환경 활성화 없이 바로 실행할 수도 있다.
+      </p>
+    </div>
+
+    <h3>설치되는 주요 패키지</h3>
+
+    <table>
+      <thead>
+        <tr>
+          <th>패키지</th>
+          <th>역할</th>
+          <th>설명</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>langgraph</code></td>
+          <td>핵심 프레임워크</td>
+          <td>StateGraph, 노드, 엣지 등 그래프 구축에 필요한 모든 기능을 제공한다.</td>
+        </tr>
+        <tr>
+          <td><code>langchain-core</code></td>
+          <td>기반 라이브러리</td>
+          <td>LangChain 생태계의 공통 인터페이스(메시지, 도구, 프롬프트 등)를 정의한다.</td>
+        </tr>
+        <tr>
+          <td><code>langchain-anthropic</code></td>
+          <td>Anthropic 연동</td>
+          <td>Claude 모델을 LangGraph 노드에서 사용할 수 있게 해주는 어댑터이다.</td>
+        </tr>
+        <tr>
+          <td><code>langchain-openai</code></td>
+          <td>OpenAI 연동</td>
+          <td>GPT 모델을 LangGraph 노드에서 사용할 수 있게 해주는 어댑터이다.</td>
+        </tr>
+        <tr>
+          <td><code>python-dotenv</code></td>
+          <td>환경 변수 관리</td>
+          <td><code>.env</code> 파일에서 환경 변수를 자동으로 로드한다.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- 섹션 3: API 키 설정 -->
+    <h2>API 키 설정</h2>
+
+    <p>
+      LangGraph 자체는 API 키가 필요 없지만,
+      LLM을 호출하는 노드를 만들려면 해당 LLM 서비스의 API 키가 필요하다.
+      Anthropic(Claude) 또는 OpenAI 중 하나 이상의 API 키를 설정한다.
+    </p>
+
+    <h3>방법 1: 환경 변수 직접 설정</h3>
+
+    <p>터미널에서 바로 환경 변수를 설정할 수 있다:</p>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-bash"># Anthropic API 키 (Claude)
+export ANTHROPIC_API_KEY="sk-ant-..."
+
+# OpenAI API 키 (GPT)
+export OPENAI_API_KEY="sk-..."
+
+# 셸 설정 파일에 영구 등록 (선택)
+echo 'export ANTHROPIC_API_KEY="sk-ant-..."' >> ~/.zshrc
+echo 'export OPENAI_API_KEY="sk-..."' >> ~/.zshrc</code></pre>
+    </div>
+
+    <h3>방법 2: .env 파일 사용 (권장)</h3>
+
+    <p>
+      프로젝트 루트에 <code>.env</code> 파일을 생성하여
+      API 키를 관리하면 더 안전하고 편리하다.
+    </p>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-bash"># .env 파일 내용
+ANTHROPIC_API_KEY=sk-ant-...
+OPENAI_API_KEY=sk-...</code></pre>
+    </div>
+
+    <p>Python 코드에서 <code>python-dotenv</code>로 로드한다:</p>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-python">from dotenv import load_dotenv
+import os
+
+# .env 파일에서 환경 변수 로드
+load_dotenv()
+
+# API 키 확인
+api_key = os.getenv("ANTHROPIC_API_KEY")
+if api_key:
+    print("API 키가 정상적으로 로드되었다.")
+else:
+    print("API 키를 찾을 수 없다. .env 파일을 확인하라.")</code></pre>
+    </div>
+
+    <div class="info-box info-box--warning">
+      <div class="info-box__title">WARNING</div>
+      <p>
+        <code>.env</code> 파일은 절대로 Git에 커밋하지 않는다.
+        반드시 <code>.gitignore</code>에 <code>.env</code>를 추가하여
+        API 키가 외부에 노출되지 않도록 한다.
+      </p>
+    </div>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-bash"># .gitignore에 .env 추가
+echo ".env" >> .gitignore</code></pre>
+    </div>
+
+    <!-- 섹션 4: 설치 확인 -->
+    <h2>설치 확인</h2>
+
+    <p>
+      모든 설치가 완료되었는지 확인하는 테스트 스크립트를 실행한다.
+    </p>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-python">"""설치 확인 스크립트: check_setup.py"""
+
+# 1. LangGraph 핵심 모듈 확인
+try:
+    from langgraph.graph import StateGraph, START, END
+    print("[OK] langgraph 설치 완료")
+except ImportError:
+    print("[FAIL] langgraph가 설치되지 않았다")
+
+# 2. LangChain Core 확인
+try:
+    from langchain_core.messages import HumanMessage, AIMessage
+    print("[OK] langchain-core 설치 완료")
+except ImportError:
+    print("[FAIL] langchain-core가 설치되지 않았다")
+
+# 3. Anthropic 어댑터 확인
+try:
+    from langchain_anthropic import ChatAnthropic
+    print("[OK] langchain-anthropic 설치 완료")
+except ImportError:
+    print("[FAIL] langchain-anthropic이 설치되지 않았다")
+
+# 4. OpenAI 어댑터 확인
+try:
+    from langchain_openai import ChatOpenAI
+    print("[OK] langchain-openai 설치 완료")
+except ImportError:
+    print("[FAIL] langchain-openai가 설치되지 않았다")
+
+# 5. 환경 변수 확인
+import os
+from dotenv import load_dotenv
+load_dotenv()
+
+anthropic_key = os.getenv("ANTHROPIC_API_KEY")
+openai_key = os.getenv("OPENAI_API_KEY")
+
+if anthropic_key:
+    print(f"[OK] ANTHROPIC_API_KEY 설정됨 (앞 8자: {anthropic_key[:8]}...)")
+else:
+    print("[WARN] ANTHROPIC_API_KEY가 설정되지 않았다")
+
+if openai_key:
+    print(f"[OK] OPENAI_API_KEY 설정됨 (앞 8자: {openai_key[:8]}...)")
+else:
+    print("[WARN] OPENAI_API_KEY가 설정되지 않았다")
+
+print("\n--- 설치 확인 완료 ---")</code></pre>
+    </div>
+
+    <p>스크립트를 실행한다:</p>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-bash"># uv 사용 시
+uv run python check_setup.py
+
+# pip 사용 시 (가상 환경 활성화 상태에서)
+python check_setup.py</code></pre>
+    </div>
+
+    <p>정상적인 출력 결과:</p>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-bash">[OK] langgraph 설치 완료
+[OK] langchain-core 설치 완료
+[OK] langchain-anthropic 설치 완료
+[OK] langchain-openai 설치 완료
+[OK] ANTHROPIC_API_KEY 설정됨 (앞 8자: sk-ant-a...)
+[OK] OPENAI_API_KEY 설정됨 (앞 8자: sk-proj-...)
+
+--- 설치 확인 완료 ---</code></pre>
+    </div>
+
+    <!-- 섹션 5: 패키지 구성 -->
+    <h2>패키지 구성</h2>
+
+    <p>
+      <code>langgraph</code>를 설치하면 여러 하위 패키지가 함께 설치된다.
+      각 패키지의 역할을 이해하면 필요한 기능을 어디서 가져와야 하는지 알 수 있다.
+    </p>
+
+    <table>
+      <thead>
+        <tr>
+          <th>패키지</th>
+          <th>주요 모듈</th>
+          <th>설명</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>langgraph</code></td>
+          <td><code>langgraph.graph</code></td>
+          <td>
+            핵심 패키지. <code>StateGraph</code>, <code>START</code>, <code>END</code>,
+            <code>MessagesState</code> 등 그래프 구축에 필요한 모든 클래스와 상수를 포함한다.
+          </td>
+        </tr>
+        <tr>
+          <td><code>langgraph-checkpoint</code></td>
+          <td><code>langgraph.checkpoint</code></td>
+          <td>
+            체크포인트 기능. 그래프 실행 중간 상태를 저장하고 복원할 수 있게 해준다.
+            <code>InMemorySaver</code>(메모리), <code>SqliteSaver</code>(SQLite),
+            <code>PostgresSaver</code>(PostgreSQL) 등 다양한 백엔드를 지원한다.
+          </td>
+        </tr>
+        <tr>
+          <td><code>langgraph-prebuilt</code></td>
+          <td><code>langgraph.prebuilt</code></td>
+          <td>
+            미리 만들어진 컴포넌트. <code>create_react_agent()</code> 같은
+            즉시 사용 가능한 에이전트 빌더와 <code>ToolNode</code> 등
+            자주 사용되는 노드를 제공한다.
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-python"># 자주 사용하는 import 모음
+
+# 그래프 구축
+from langgraph.graph import StateGraph, START, END, MessagesState
+
+# 체크포인트 (메모리 저장)
+from langgraph.checkpoint.memory import InMemorySaver
+
+# 미리 만들어진 에이전트
+from langgraph.prebuilt import create_react_agent, ToolNode
+
+# LLM 모델
+from langchain_anthropic import ChatAnthropic
+from langchain_openai import ChatOpenAI
+
+# 메시지 타입
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage</code></pre>
+    </div>
+
+    <!-- 섹션 6: LangSmith 설정 -->
+    <h2>LangSmith 설정 (선택)</h2>
+
+    <p>
+      <strong>LangSmith</strong>는 LangChain 팀이 제공하는
+      LLM 애플리케이션 모니터링 및 디버깅 플랫폼이다.
+      LangGraph와 함께 사용하면 각 노드의 실행 과정을
+      시각적으로 추적할 수 있어 개발 생산성이 크게 향상된다.
+    </p>
+
+    <h3>LangSmith가 제공하는 기능</h3>
+
+    <ul>
+      <li><strong>트레이싱(Tracing):</strong> 각 노드의 입력, 출력, 실행 시간을 기록한다.</li>
+      <li><strong>토큰 사용량:</strong> 노드별 토큰 소비량을 추적하여 비용을 관리한다.</li>
+      <li><strong>에러 추적:</strong> 어떤 노드에서 오류가 발생했는지 즉시 확인한다.</li>
+      <li><strong>그래프 시각화:</strong> 그래프 구조와 실행 흐름을 시각적으로 보여준다.</li>
+      <li><strong>프롬프트 히스토리:</strong> LLM에 전달된 프롬프트와 응답을 모두 기록한다.</li>
+    </ul>
+
+    <h3>설정 방법</h3>
+
+    <p>
+      <a href="https://smith.langchain.com" target="_blank">smith.langchain.com</a>에서
+      계정을 생성하고 API 키를 발급받는다. 그 후 환경 변수를 설정한다:
+    </p>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-bash"># .env 파일에 추가
+LANGCHAIN_TRACING_V2=true
+LANGCHAIN_API_KEY=lsv2_pt_...
+LANGCHAIN_PROJECT=langgraph-tutorial</code></pre>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>환경 변수</th>
+          <th>설명</th>
+          <th>예시</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>LANGCHAIN_TRACING_V2</code></td>
+          <td>트레이싱 활성화 여부</td>
+          <td><code>true</code></td>
+        </tr>
+        <tr>
+          <td><code>LANGCHAIN_API_KEY</code></td>
+          <td>LangSmith API 키</td>
+          <td><code>lsv2_pt_...</code></td>
+        </tr>
+        <tr>
+          <td><code>LANGCHAIN_PROJECT</code></td>
+          <td>프로젝트 이름 (대시보드에서 구분용)</td>
+          <td><code>langgraph-tutorial</code></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="info-box info-box--info">
+      <div class="info-box__title">INFO</div>
+      <p>
+        LangSmith는 선택 사항이다. 설정하지 않아도 LangGraph는 정상적으로 동작한다.
+        하지만 디버깅과 성능 최적화에 매우 유용하므로,
+        특히 복잡한 그래프를 다루기 시작하면 설정해 두는 것을 강력히 권장한다.
+        무료 플랜으로도 기본적인 트레이싱 기능을 사용할 수 있다.
+      </p>
+    </div>
+
+    <h3>LangSmith 연동 확인</h3>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-python">"""LangSmith 연동 확인 스크립트"""
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+tracing = os.getenv("LANGCHAIN_TRACING_V2")
+api_key = os.getenv("LANGCHAIN_API_KEY")
+project = os.getenv("LANGCHAIN_PROJECT")
+
+if tracing == "true" and api_key:
+    print(f"[OK] LangSmith 트레이싱 활성화됨")
+    print(f"[OK] 프로젝트: {project or '(기본값)'}")
+else:
+    print("[INFO] LangSmith가 설정되지 않았다 (선택 사항)")
+    print("[INFO] 설정하려면 .env에 LANGCHAIN_TRACING_V2=true와")
+    print("       LANGCHAIN_API_KEY를 추가하라")</code></pre>
+    </div>
+
+    <!-- 프로젝트 구조 -->
+    <h2>권장 프로젝트 구조</h2>
+
+    <p>
+      앞으로의 튜토리얼을 따라가기 위한 권장 프로젝트 구조이다:
+    </p>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-bash">langgraph-demo/
+├── .env                  # API 키 (Git에 커밋하지 않음)
+├── .gitignore            # .env 제외 설정
+├── pyproject.toml        # 프로젝트 설정 및 의존성
+├── check_setup.py        # 설치 확인 스크립트
+├── 01_first_graph.py     # 챕터 3: 첫 번째 그래프
+├── 02_state.py           # 챕터 4: State 관리
+└── ...</code></pre>
+    </div>
+
+    <h2>정리</h2>
+
+    <p>이번 챕터에서 완료한 작업을 정리한다:</p>
+
+    <ul>
+      <li>Python 3.10+ 버전을 확인했다.</li>
+      <li><code>uv</code> 또는 <code>pip</code>으로 프로젝트를 생성하고 패키지를 설치했다.</li>
+      <li><code>langgraph</code>, <code>langchain-anthropic</code>, <code>langchain-openai</code> 등 필수 패키지를 설치했다.</li>
+      <li>API 키를 환경 변수 또는 <code>.env</code> 파일로 설정했다.</li>
+      <li>설치 확인 스크립트로 모든 구성이 정상인지 검증했다.</li>
+      <li>선택적으로 LangSmith를 설정하여 디버깅 환경을 구축했다.</li>
+    </ul>
+
+    <p>
+      환경이 준비되었으므로, 다음 챕터에서는 실제로 첫 번째 그래프를 만들어 본다.
+    </p>
+
+    <nav class="page-nav"></nav>
+  </main>
+</div>
+
+<script src="../js/nav.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-json.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.js"></script>
+</body>
+</html>

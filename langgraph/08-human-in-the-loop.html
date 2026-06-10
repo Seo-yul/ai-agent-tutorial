@@ -1,0 +1,793 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Human-in-the-Loop - AI Agent 개발 튜토리얼</title>
+  <link rel="stylesheet" href="../css/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.css">
+</head>
+<body>
+
+<header class="site-header">
+  <button class="hamburger" aria-label="메뉴">
+    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+  </button>
+  <a href="../index.html" class="site-header__title"><span>AI Agent</span> 개발 튜토리얼</a>
+</header>
+
+<div class="layout">
+  <nav class="sidebar"></nav>
+  <main class="main">
+    <span class="chapter-badge chapter-badge--lg-advanced">심화 과정</span>
+    <h1>Human-in-the-Loop</h1>
+    <p class="chapter-subtitle">사람의 승인과 피드백을 에이전트 워크플로우에 통합한다</p>
+
+    <!-- 섹션 1: Human-in-the-Loop이란? -->
+    <h2>Human-in-the-Loop이란?</h2>
+
+    <p>
+      AI 에이전트는 강력하지만, 모든 결정을 자율적으로 내리게 두는 것은 위험하다.
+      <strong>Human-in-the-Loop(HITL)</strong>은 에이전트의 워크플로우 중
+      중요한 결정 지점에서 사람의 승인이나 피드백을 받는 패턴이다.
+      에이전트가 혼자서 모든 것을 처리하는 대신,
+      사람이 개입하여 판단을 검증하고, 필요시 수정하며, 최종적으로 승인하는 구조를 만든다.
+    </p>
+
+    <p>
+      이 패턴이 필요한 대표적인 상황들은 다음과 같다:
+    </p>
+
+    <ul>
+      <li><strong>이메일/메시지 발송:</strong> LLM이 작성한 이메일을 보내기 전에 사람이 내용을 검토한다.</li>
+      <li><strong>코드 실행:</strong> 에이전트가 생성한 코드를 실행하기 전에 보안 검토를 받는다.</li>
+      <li><strong>금융 거래:</strong> 일정 금액 이상의 거래는 관리자 승인을 거친다.</li>
+      <li><strong>데이터 삭제:</strong> 중요한 데이터를 삭제하기 전에 확인을 받는다.</li>
+      <li><strong>외부 API 호출:</strong> 비용이 발생하거나 되돌릴 수 없는 API 호출을 실행 전에 검토한다.</li>
+    </ul>
+
+    <div class="diagram">
+Human-in-the-Loop 기본 흐름
+
+  ┌───────┐     ┌──────────┐     ┌──────────────┐     ┌──────────┐     ┌─────┐
+  │ START │────▶│ AI 분석  │────▶│ 사람 승인 대기 │────▶│ 작업 실행 │────▶│ END │
+  └───────┘     └──────────┘     └──────────────┘     └──────────┘     └─────┘
+                                        │
+                                        │ 거부 시
+                                        ▼
+                                  ┌──────────┐
+                                  │ 취소 처리 │────▶ END
+                                  └──────────┘
+
+  * AI가 분석/제안을 하고, 사람이 승인/거부를 결정한다
+  * 승인 시 작업을 실행하고, 거부 시 취소 처리한다
+    </div>
+
+    <div class="info-box info-box--info">
+      <div class="info-box__title">INFO</div>
+      <p>
+        LangGraph에서 Human-in-the-Loop을 구현하려면 반드시
+        <strong>체크포인터(Checkpointer)</strong>가 필요하다.
+        인터럽트 시점의 상태를 저장해야 나중에 사람의 입력을 받아 재개할 수 있기 때문이다.
+        체크포인터에 대한 자세한 내용은 다음 챕터(Chapter 9)에서 다룬다.
+      </p>
+    </div>
+
+    <!-- 섹션 2: interrupt 함수 -->
+    <h2>interrupt 함수</h2>
+
+    <p>
+      LangGraph는 <code>interrupt</code> 함수를 제공하여
+      그래프 실행을 특정 지점에서 일시 중지(pause)할 수 있게 한다.
+      <code>interrupt</code>가 호출되면 그래프 실행이 즉시 멈추고,
+      사람이 <code>Command(resume=...)</code>로 응답할 때까지 대기한다.
+    </p>
+
+    <p>
+      <code>interrupt</code> 함수의 핵심 동작 원리는 다음과 같다:
+    </p>
+
+    <ol>
+      <li>그래프가 실행되다가 <code>interrupt()</code>를 만나면 <strong>실행이 일시 중지</strong>된다.</li>
+      <li>현재까지의 상태가 <strong>체크포인터에 저장</strong>된다.</li>
+      <li><code>invoke()</code> 또는 <code>stream()</code>이 즉시 반환된다 (중간 결과 포함).</li>
+      <li>사람이 결과를 확인하고 <strong>승인/거부/수정</strong> 등의 응답을 결정한다.</li>
+      <li><code>Command(resume=값)</code>을 통해 그래프를 <strong>재개</strong>한다.</li>
+      <li><code>interrupt()</code>의 <strong>반환값</strong>이 <code>resume</code>에 전달한 값이 된다.</li>
+    </ol>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-python">from langgraph.types import interrupt, Command
+
+def human_review(state):
+    """사람의 승인을 받는 노드"""
+    # interrupt()를 호출하면 그래프 실행이 여기서 멈춘다
+    # 인자로 전달한 딕셔너리는 사람에게 보여줄 정보이다
+    decision = interrupt({
+        "question": "이 작업을 진행할까요?",
+        "details": state["proposed_action"],
+    })
+
+    # resume 시 decision에 사람의 응답이 들어온다
+    if decision == "approve":
+        return {"approved": True}
+    return {"approved": False}</code></pre>
+    </div>
+
+    <p>
+      <code>interrupt()</code>에 전달하는 인자는 사람에게 보여줄 정보이다.
+      문자열, 딕셔너리, 리스트 등 어떤 직렬화 가능한 값이든 사용할 수 있다.
+      이 값은 중단된 그래프의 상태를 조회할 때 확인할 수 있으며,
+      사람이 어떤 맥락에서 판단을 내려야 하는지 알려주는 역할을 한다.
+    </p>
+
+    <div class="info-box info-box--tip">
+      <div class="info-box__title">TIP</div>
+      <p>
+        <code>interrupt()</code>는 Python의 <code>input()</code>과 비슷한 개념으로 이해할 수 있다.
+        <code>input()</code>이 사용자 입력을 기다리는 것처럼,
+        <code>interrupt()</code>는 사람의 응답을 기다린다.
+        다만, <code>interrupt()</code>는 비동기적으로 작동하여
+        그래프 실행을 일시 중지하고 나중에 재개할 수 있다는 점이 다르다.
+      </p>
+    </div>
+
+    <!-- 섹션 3: Command로 재개 -->
+    <h2>Command로 재개</h2>
+
+    <p>
+      인터럽트된 그래프를 재개하려면 <code>Command(resume=값)</code>을 사용한다.
+      <code>resume</code>에 전달한 값이 <code>interrupt()</code>의 반환값이 되어
+      노드의 실행이 중단된 지점부터 다시 이어진다.
+    </p>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-python">from langgraph.types import Command
+
+# 1. 그래프 실행 — interrupt()에서 멈춤
+config = {"configurable": {"thread_id": "order-123"}}
+result = app.invoke({"order_id": "A001", "amount": 50000}, config)
+
+# result에는 interrupt에서 전달한 정보가 포함되어 있다
+# 예: {"question": "이 작업을 진행할까요?", "details": "주문 A001, 50,000원 결제"}
+
+# 2. 사람이 내용을 확인하고 승인 결정
+
+# 3. 승인 → Command(resume="approve")로 재개
+result = app.invoke(Command(resume="approve"), config)
+# interrupt()가 "approve"를 반환하고 노드가 이어서 실행된다
+
+# 또는 거부 → Command(resume="reject")로 재개
+result = app.invoke(Command(resume="reject"), config)
+# interrupt()가 "reject"를 반환한다</code></pre>
+    </div>
+
+    <p>
+      <code>resume</code>에는 문자열뿐만 아니라 딕셔너리, 리스트 등
+      어떤 직렬화 가능한 값이든 전달할 수 있다.
+      예를 들어, 사람이 수정 사항을 포함하여 응답할 수 있다:
+    </p>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-python"># 사람이 수정 사항과 함께 승인
+result = app.invoke(
+    Command(resume={
+        "decision": "approve_with_changes",
+        "modified_content": "수정된 이메일 내용...",
+        "note": "인사말을 좀 더 격식 있게 변경했습니다."
+    }),
+    config
+)</code></pre>
+    </div>
+
+    <div class="info-box info-box--warning">
+      <div class="info-box__title">WARNING</div>
+      <p>
+        <code>Command(resume=...)</code>로 재개할 때는 반드시
+        인터럽트가 발생했을 때 사용한 <strong>동일한 config</strong>(같은 <code>thread_id</code>)를
+        전달해야 한다. 다른 <code>thread_id</code>를 사용하면
+        체크포인터에서 해당 스레드의 상태를 찾을 수 없어 오류가 발생한다.
+      </p>
+    </div>
+
+    <!-- 섹션 4: 체크포인터 필수 -->
+    <h2>체크포인터 필수</h2>
+
+    <p>
+      <code>interrupt</code>를 사용하려면 반드시 체크포인터가 필요하다.
+      체크포인터는 그래프의 실행 상태를 저장하고 복원하는 역할을 한다.
+      인터럽트로 실행이 중단될 때 현재 상태를 저장하고,
+      <code>Command(resume=...)</code>로 재개할 때 저장된 상태를 복원한다.
+    </p>
+
+    <p>
+      가장 간단한 체크포인터는 <code>InMemorySaver</code>이다.
+      메모리에 상태를 저장하므로 프로세스가 종료되면 데이터가 사라지지만,
+      개발 및 테스트 단계에서는 충분히 유용하다.
+    </p>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-python">from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.graph import StateGraph, START, END
+
+# 체크포인터 생성
+checkpointer = InMemorySaver()
+
+# 그래프 정의 (노드, 엣지 추가 후)
+graph = StateGraph(State)
+graph.add_node("analyze", analyze_node)
+graph.add_node("human_review", human_review_node)
+graph.add_node("execute", execute_node)
+graph.add_edge(START, "analyze")
+graph.add_edge("analyze", "human_review")
+graph.add_edge("human_review", "execute")
+graph.add_edge("execute", END)
+
+# 컴파일 시 체크포인터를 전달한다
+app = graph.compile(checkpointer=checkpointer)
+
+# thread_id로 각 실행을 구분한다
+config = {"configurable": {"thread_id": "session-1"}}
+result = app.invoke(initial_state, config)</code></pre>
+    </div>
+
+    <p>
+      <code>thread_id</code>는 각 실행(대화/세션)을 식별하는 고유 ID이다.
+      같은 <code>thread_id</code>를 사용하면 이전 실행의 상태를 이어서 사용할 수 있고,
+      다른 <code>thread_id</code>를 사용하면 완전히 새로운 실행이 시작된다.
+      인터럽트에서 재개할 때 반드시 같은 <code>thread_id</code>를 사용해야 하는 이유가 여기에 있다.
+    </p>
+
+    <div class="info-box info-box--info">
+      <div class="info-box__title">INFO</div>
+      <p>
+        체크포인터 없이 <code>interrupt</code>를 사용하면
+        <code>ValueError</code>가 발생한다.
+        반드시 <code>graph.compile(checkpointer=...)</code>로
+        체크포인터를 지정해야 한다.
+      </p>
+    </div>
+
+    <!-- 섹션 5: 승인 워크플로우 전체 예제 -->
+    <h2>승인 워크플로우 전체 예제</h2>
+
+    <p>
+      실제로 동작하는 주문 처리 시스템을 구현해 보겠다.
+      이 시스템은 주문을 접수하고, 재고를 확인한 뒤,
+      사람의 승인을 받아 결제를 처리하는 워크플로우이다.
+      승인이 거부되면 주문이 취소된다.
+    </p>
+
+    <div class="diagram">
+주문 처리 워크플로우
+
+  ┌───────┐     ┌──────────┐     ┌──────────┐     ┌──────────────┐
+  │ START │────▶│ 주문접수  │────▶│ 재고확인  │────▶│ 사람 승인대기 │
+  └───────┘     └──────────┘     └──────────┘     └──────┬───────┘
+                                                         │
+                                            ┌────────────┼────────────┐
+                                            │ approved   │            │ rejected
+                                            ▼            │            ▼
+                                      ┌──────────┐      │      ┌──────────┐
+                                      │ 결제처리  │      │      │ 주문취소  │
+                                      └─────┬────┘      │      └─────┬────┘
+                                            │            │            │
+                                            ▼            │            ▼
+                                          ┌─────┐       │          ┌─────┐
+                                          │ END │       │          │ END │
+                                          └─────┘       │          └─────┘
+    </div>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-python">from typing_extensions import TypedDict
+from langgraph.graph import StateGraph, START, END
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.types import interrupt, Command
+
+
+# 1. 상태 정의
+class OrderState(TypedDict):
+    order_id: str          # 주문 ID
+    product: str           # 상품명
+    quantity: int           # 수량
+    price: int              # 가격 (원)
+    stock_available: bool   # 재고 여부
+    approved: bool          # 승인 여부
+    status: str             # 주문 상태
+
+
+# 2. 노드 정의
+def receive_order(state: OrderState) -> dict:
+    """주문을 접수하는 노드"""
+    print(f"[주문접수] 주문 {state['order_id']}: "
+          f"{state['product']} x {state['quantity']}")
+    return {"status": "주문 접수됨"}
+
+
+def check_stock(state: OrderState) -> dict:
+    """재고를 확인하는 노드"""
+    # 실제로는 DB 조회 등을 수행한다
+    available = state["quantity"] <= 10  # 10개 이하면 재고 있음
+    print(f"[재고확인] {state['product']}: "
+          f"{'재고 있음' if available else '재고 부족'}")
+    return {
+        "stock_available": available,
+        "status": "재고 확인됨"
+    }
+
+
+def human_approval(state: OrderState) -> dict:
+    """사람의 승인을 받는 노드"""
+    if not state["stock_available"]:
+        # 재고가 없으면 승인 없이 거부
+        return {"approved": False, "status": "재고 부족으로 자동 거부"}
+
+    total = state["price"] * state["quantity"]
+
+    # interrupt로 실행을 일시 중지한다
+    decision = interrupt({
+        "message": "주문 승인이 필요합니다",
+        "order_id": state["order_id"],
+        "product": state["product"],
+        "quantity": state["quantity"],
+        "total_price": f"{total:,}원",
+    })
+
+    if decision == "approve":
+        return {"approved": True, "status": "승인됨"}
+    else:
+        return {"approved": False, "status": f"거부됨 (사유: {decision})"}
+
+
+def process_payment(state: OrderState) -> dict:
+    """결제를 처리하는 노드"""
+    total = state["price"] * state["quantity"]
+    print(f"[결제처리] 주문 {state['order_id']}: {total:,}원 결제 완료")
+    return {"status": "결제 완료"}
+
+
+def cancel_order(state: OrderState) -> dict:
+    """주문을 취소하는 노드"""
+    print(f"[주문취소] 주문 {state['order_id']}: {state['status']}")
+    return {"status": "주문 취소됨"}
+
+
+# 3. 라우팅 함수
+def route_after_approval(state: OrderState) -> str:
+    """승인 결과에 따라 다음 노드를 결정한다"""
+    if state["approved"]:
+        return "process_payment"
+    return "cancel_order"
+
+
+# 4. 그래프 구성
+graph = StateGraph(OrderState)
+
+# 노드 추가
+graph.add_node("receive_order", receive_order)
+graph.add_node("check_stock", check_stock)
+graph.add_node("human_approval", human_approval)
+graph.add_node("process_payment", process_payment)
+graph.add_node("cancel_order", cancel_order)
+
+# 엣지 추가
+graph.add_edge(START, "receive_order")
+graph.add_edge("receive_order", "check_stock")
+graph.add_edge("check_stock", "human_approval")
+graph.add_conditional_edges("human_approval", route_after_approval)
+graph.add_edge("process_payment", END)
+graph.add_edge("cancel_order", END)
+
+# 5. 컴파일 (체크포인터 필수)
+checkpointer = InMemorySaver()
+app = graph.compile(checkpointer=checkpointer)
+
+
+# 6. 실행
+config = {"configurable": {"thread_id": "order-001"}}
+
+# 첫 실행 — human_approval의 interrupt에서 멈춘다
+result = app.invoke({
+    "order_id": "ORD-2024-001",
+    "product": "무선 키보드",
+    "quantity": 2,
+    "price": 45000,
+    "stock_available": False,
+    "approved": False,
+    "status": "",
+}, config)
+
+print(f"현재 상태: {result['status']}")
+# 출력: 현재 상태: (interrupt에서 대기 중)
+
+# 사람이 주문 내용을 확인하고 승인한다
+result = app.invoke(Command(resume="approve"), config)
+print(f"최종 상태: {result['status']}")
+# 출력: 최종 상태: 결제 완료</code></pre>
+    </div>
+
+    <p>
+      위 코드에서 핵심 흐름을 정리하면 다음과 같다:
+    </p>
+
+    <ol>
+      <li><code>receive_order</code>에서 주문을 접수한다.</li>
+      <li><code>check_stock</code>에서 재고를 확인한다.</li>
+      <li><code>human_approval</code>에서 <code>interrupt()</code>가 호출되어 실행이 멈춘다.</li>
+      <li>사람이 주문 정보를 확인하고 <code>Command(resume="approve")</code>로 승인한다.</li>
+      <li><code>interrupt()</code>가 <code>"approve"</code>를 반환하고, <code>approved=True</code>가 된다.</li>
+      <li>조건부 엣지에 의해 <code>process_payment</code> 노드로 이동하여 결제가 처리된다.</li>
+    </ol>
+
+    <!-- 섹션 6: 여러 인터럽트 지점 -->
+    <h2>여러 인터럽트 지점</h2>
+
+    <p>
+      하나의 그래프 안에 여러 개의 인터럽트 지점을 넣을 수 있다.
+      각 인터럽트는 순서대로 실행되며,
+      하나의 인터럽트가 <code>Command(resume=...)</code>로 재개되면
+      그래프가 다음 인터럽트까지 실행되고 다시 멈춘다.
+    </p>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-python">from typing_extensions import TypedDict
+from langgraph.graph import StateGraph, START, END
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.types import interrupt, Command
+
+
+class MultiApprovalState(TypedDict):
+    request: str
+    budget_approved: bool
+    legal_approved: bool
+    status: str
+
+
+def budget_review(state: MultiApprovalState) -> dict:
+    """예산 팀의 승인을 받는 노드"""
+    decision = interrupt({
+        "step": "예산 검토",
+        "message": f"'{state['request']}' 건에 대한 예산 승인이 필요합니다.",
+    })
+    return {"budget_approved": decision == "approve"}
+
+
+def legal_review(state: MultiApprovalState) -> dict:
+    """법무 팀의 승인을 받는 노드"""
+    if not state["budget_approved"]:
+        return {"legal_approved": False, "status": "예산 미승인으로 건너뜀"}
+
+    decision = interrupt({
+        "step": "법무 검토",
+        "message": f"'{state['request']}' 건에 대한 법무 승인이 필요합니다.",
+    })
+    return {"legal_approved": decision == "approve"}
+
+
+def finalize(state: MultiApprovalState) -> dict:
+    """최종 처리 노드"""
+    if state["budget_approved"] and state["legal_approved"]:
+        return {"status": "모든 승인 완료 — 진행합니다"}
+    return {"status": "승인 불가 — 중단합니다"}
+
+
+# 그래프 구성
+graph = StateGraph(MultiApprovalState)
+graph.add_node("budget_review", budget_review)
+graph.add_node("legal_review", legal_review)
+graph.add_node("finalize", finalize)
+graph.add_edge(START, "budget_review")
+graph.add_edge("budget_review", "legal_review")
+graph.add_edge("legal_review", "finalize")
+graph.add_edge("finalize", END)
+
+checkpointer = InMemorySaver()
+app = graph.compile(checkpointer=checkpointer)
+
+config = {"configurable": {"thread_id": "approval-001"}}
+
+# 1단계: 실행 시작 → 예산 검토에서 멈춤
+result = app.invoke({
+    "request": "클라우드 서버 증설",
+    "budget_approved": False,
+    "legal_approved": False,
+    "status": "",
+}, config)
+
+# 2단계: 예산 팀 승인 → 법무 검토에서 멈춤
+result = app.invoke(Command(resume="approve"), config)
+
+# 3단계: 법무 팀 승인 → 최종 처리 후 완료
+result = app.invoke(Command(resume="approve"), config)
+print(result["status"])  # "모든 승인 완료 — 진행합니다"</code></pre>
+    </div>
+
+    <div class="info-box info-box--tip">
+      <div class="info-box__title">TIP</div>
+      <p>
+        여러 인터럽트를 사용할 때, 각 단계에서 어떤 인터럽트가 대기 중인지
+        확인하려면 <code>app.get_state(config)</code>를 사용한다.
+        반환된 상태 객체의 <code>next</code> 속성에 다음에 실행될 노드 이름이 들어있고,
+        <code>tasks</code> 속성에서 인터럽트 정보를 확인할 수 있다.
+      </p>
+    </div>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-python"># 현재 인터럽트 상태 확인
+state_snapshot = app.get_state(config)
+
+# 다음 실행될 노드 확인
+print(f"대기 중인 노드: {state_snapshot.next}")
+# 예: ('budget_review',)
+
+# 인터럽트에서 전달한 정보 확인
+for task in state_snapshot.tasks:
+    if task.interrupts:
+        for intr in task.interrupts:
+            print(f"인터럽트 정보: {intr.value}")
+            # 예: {"step": "예산 검토", "message": "..."}</code></pre>
+    </div>
+
+    <!-- 섹션 7: 실전 예제 — 이메일 전송 에이전트 -->
+    <h2>실전 예제: 이메일 전송 에이전트</h2>
+
+    <p>
+      이제 보다 실용적인 예제를 구현한다.
+      LLM이 이메일 초안을 작성하고, 사람이 검토/수정/승인한 후 전송하는
+      이메일 전송 에이전트이다.
+      사람이 초안을 거부하면 LLM이 피드백을 반영하여 다시 작성하는 루프가 포함되어 있다.
+    </p>
+
+    <div class="diagram">
+이메일 전송 에이전트 워크플로우
+
+  ┌───────┐     ┌──────────────┐     ┌──────────────┐
+  │ START │────▶│ 이메일 초안   │────▶│ 사람 검토     │
+  └───────┘     │ 작성 (LLM)   │     │ (interrupt)  │
+                └──────────────┘     └──────┬───────┘
+                       ▲                    │
+                       │               ┌────┴────┐
+                       │               │         │
+                       │          "approve"  "reject"
+                       │               │         │
+                       │               ▼         │
+                       │         ┌──────────┐    │
+                       │         │ 이메일    │    │
+                       │         │ 전송      │    │
+                       │         └────┬─────┘    │
+                       │              │          │
+                       │              ▼          │
+                       │           ┌─────┐       │
+                       │           │ END │       │
+                       │           └─────┘       │
+                       │                         │
+                       └─────────────────────────┘
+                        피드백을 반영하여 재작성
+    </div>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-python">from typing import Annotated
+from typing_extensions import TypedDict
+from langgraph.graph import StateGraph, START, END
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.types import interrupt, Command
+from langchain_openai import ChatOpenAI
+
+
+# 1. 상태 정의
+class EmailState(TypedDict):
+    recipient: str        # 수신자 이름
+    recipient_email: str  # 수신자 이메일
+    purpose: str          # 이메일 목적
+    draft: str            # 이메일 초안
+    feedback: str         # 사람의 피드백
+    attempt: int          # 작성 시도 횟수
+    sent: bool            # 전송 완료 여부
+
+
+# 2. LLM 설정
+llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.7)
+
+
+# 3. 노드 정의
+def draft_email(state: EmailState) -> dict:
+    """LLM이 이메일 초안을 작성하는 노드"""
+    attempt = state.get("attempt", 0) + 1
+
+    if state.get("feedback"):
+        # 이전 피드백이 있으면 반영하여 재작성
+        prompt = f"""이전에 작성한 이메일 초안이 거부되었습니다.
+
+이전 초안:
+{state['draft']}
+
+피드백:
+{state['feedback']}
+
+위 피드백을 반영하여 이메일을 다시 작성해 주세요.
+
+수신자: {state['recipient']}
+목적: {state['purpose']}
+"""
+    else:
+        # 처음 작성
+        prompt = f"""다음 정보로 비즈니스 이메일을 작성해 주세요.
+
+수신자: {state['recipient']}
+목적: {state['purpose']}
+
+정중하고 전문적인 톤으로 작성하세요.
+"""
+
+    response = llm.invoke(prompt)
+    print(f"\n[이메일 초안 v{attempt}]")
+    print(response.content)
+
+    return {
+        "draft": response.content,
+        "attempt": attempt,
+        "feedback": "",  # 피드백 초기화
+    }
+
+
+def human_review_email(state: EmailState) -> dict:
+    """사람이 이메일을 검토하는 노드"""
+    decision = interrupt({
+        "message": "이메일 초안을 검토해 주세요.",
+        "draft": state["draft"],
+        "recipient": f"{state['recipient']} <{state['recipient_email']}>",
+        "attempt": state["attempt"],
+        "options": [
+            "approve — 이대로 전송",
+            "reject — 피드백과 함께 거부 (재작성 요청)",
+        ]
+    })
+
+    # decision은 딕셔너리로 전달받는다
+    if isinstance(decision, dict):
+        if decision.get("action") == "approve":
+            return {"sent": False}  # 아직 전송 전
+        elif decision.get("action") == "reject":
+            return {"feedback": decision.get("feedback", "개선 필요")}
+    elif decision == "approve":
+        return {"sent": False}
+
+    return {"feedback": str(decision)}
+
+
+def send_email(state: EmailState) -> dict:
+    """이메일을 전송하는 노드"""
+    # 실제로는 SMTP 등을 사용하여 이메일을 전송한다
+    print(f"\n[이메일 전송 완료]")
+    print(f"수신자: {state['recipient']} <{state['recipient_email']}>")
+    print(f"시도 횟수: {state['attempt']}회")
+    return {"sent": True}
+
+
+# 4. 라우팅 함수
+def route_after_review(state: EmailState) -> str:
+    """검토 결과에 따라 라우팅"""
+    if state.get("feedback"):
+        # 피드백이 있으면 재작성
+        return "draft_email"
+    # 피드백이 없으면 전송
+    return "send_email"
+
+
+# 5. 그래프 구성
+graph = StateGraph(EmailState)
+
+graph.add_node("draft_email", draft_email)
+graph.add_node("human_review_email", human_review_email)
+graph.add_node("send_email", send_email)
+
+graph.add_edge(START, "draft_email")
+graph.add_edge("draft_email", "human_review_email")
+graph.add_conditional_edges("human_review_email", route_after_review)
+graph.add_edge("send_email", END)
+
+checkpointer = InMemorySaver()
+app = graph.compile(checkpointer=checkpointer)
+
+
+# 6. 실행
+config = {"configurable": {"thread_id": "email-001"}}
+
+# 초기 실행 — LLM이 초안 작성 후, 사람 검토에서 멈춤
+result = app.invoke({
+    "recipient": "김영희 팀장",
+    "recipient_email": "yhkim@example.com",
+    "purpose": "다음 주 화요일 프로젝트 킥오프 미팅 일정 제안",
+    "draft": "",
+    "feedback": "",
+    "attempt": 0,
+    "sent": False,
+}, config)
+
+# 현재 상태 확인
+state = app.get_state(config)
+for task in state.tasks:
+    if task.interrupts:
+        for intr in task.interrupts:
+            print(f"\n검토 대기 중: {intr.value['message']}")
+            print(f"초안:\n{intr.value['draft']}")
+
+# 시나리오 A: 거부하고 피드백 제공
+result = app.invoke(
+    Command(resume={
+        "action": "reject",
+        "feedback": "미팅 시간을 오후 2시로 구체적으로 제안해 주세요. "
+                    "그리고 참석자 목록도 포함해 주세요."
+    }),
+    config
+)
+# → LLM이 피드백을 반영하여 재작성 → 다시 검토에서 멈춤
+
+# 시나리오 B: 재작성된 초안을 승인
+result = app.invoke(
+    Command(resume={"action": "approve"}),
+    config
+)
+# → 이메일 전송 완료
+print(f"전송 완료: {result['sent']}")  # True</code></pre>
+    </div>
+
+    <p>
+      이 예제의 핵심 포인트들을 정리하면 다음과 같다:
+    </p>
+
+    <ul>
+      <li><strong>루프 패턴:</strong> 거부 시 <code>draft_email</code>로 돌아가는 조건부 엣지를 통해 재작성 루프를 구현했다.</li>
+      <li><strong>피드백 전달:</strong> <code>Command(resume=...)</code>에 딕셔너리를 전달하여 단순 승인/거부를 넘어 구체적인 피드백을 함께 전달할 수 있다.</li>
+      <li><strong>시도 횟수 추적:</strong> <code>attempt</code> 필드로 몇 번째 시도인지 추적하여 무한 루프를 방지하거나 사용자에게 알려줄 수 있다.</li>
+      <li><strong>상태 조회:</strong> <code>app.get_state(config)</code>로 현재 인터럽트 상태와 초안 내용을 확인할 수 있다.</li>
+    </ul>
+
+    <div class="info-box info-box--tip">
+      <div class="info-box__title">TIP</div>
+      <p>
+        실제 프로덕션에서는 <code>InMemorySaver</code> 대신
+        SQLite나 PostgreSQL 기반 체크포인터를 사용하여
+        서버 재시작 후에도 인터럽트 상태가 유지되도록 해야 한다.
+        또한, 웹 UI를 통해 사람의 승인을 받는 인터페이스를 구현하면
+        보다 자연스러운 Human-in-the-Loop 워크플로우를 만들 수 있다.
+      </p>
+    </div>
+
+    <!-- 정리 -->
+    <h2>정리</h2>
+
+    <p>이번 챕터에서 배운 내용을 정리한다:</p>
+
+    <ul>
+      <li><strong>Human-in-the-Loop</strong>은 중요한 결정 지점에서 사람의 승인/피드백을 받는 패턴이다.</li>
+      <li><code>interrupt()</code> 함수로 그래프 실행을 일시 중지하고, 사람에게 보여줄 정보를 전달한다.</li>
+      <li><code>Command(resume=값)</code>으로 인터럽트된 그래프를 재개하며, <code>resume</code> 값이 <code>interrupt()</code>의 반환값이 된다.</li>
+      <li>인터럽트를 사용하려면 <strong>체크포인터가 필수</strong>이며, <code>thread_id</code>로 각 실행을 구분한다.</li>
+      <li>하나의 그래프에 <strong>여러 인터럽트 지점</strong>을 넣을 수 있으며, 순서대로 하나씩 재개된다.</li>
+      <li>조건부 엣지와 결합하여 <strong>거부 시 재작성 루프</strong> 등 복잡한 워크플로우를 구현할 수 있다.</li>
+    </ul>
+
+    <p>다음 챕터에서는 체크포인팅과 메모리를 더 깊이 다루어, 에이전트에 기억력을 부여하는 방법을 학습한다.</p>
+
+    <nav class="page-nav"></nav>
+  </main>
+</div>
+
+<script src="../js/nav.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-json.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.js"></script>
+</body>
+</html>

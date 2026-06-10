@@ -1,0 +1,912 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>메모리와 체크포인팅 - AI Agent 개발 튜토리얼</title>
+  <link rel="stylesheet" href="../css/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.css">
+</head>
+<body>
+
+<header class="site-header">
+  <button class="hamburger" aria-label="메뉴">
+    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+  </button>
+  <a href="../index.html" class="site-header__title"><span>AI Agent</span> 개발 튜토리얼</a>
+</header>
+
+<div class="layout">
+  <nav class="sidebar"></nav>
+  <main class="main">
+    <span class="chapter-badge chapter-badge--lg-advanced">심화 과정</span>
+    <h1>메모리와 체크포인팅</h1>
+    <p class="chapter-subtitle">에이전트에 기억력을 부여하고 상태를 영속화한다</p>
+
+    <!-- 섹션 1: 체크포인팅이란? -->
+    <h2>체크포인팅이란?</h2>
+
+    <p>
+      <strong>체크포인팅(Checkpointing)</strong>은 그래프 실행의 각 단계(superstep)마다
+      상태를 저장하는 메커니즘이다.
+      마치 게임의 세이브 포인트처럼, 그래프가 노드를 하나 실행할 때마다
+      현재 상태의 스냅샷을 저장하여 나중에 복원할 수 있게 한다.
+    </p>
+
+    <p>
+      체크포인팅을 통해 다음과 같은 핵심 기능들이 가능해진다:
+    </p>
+
+    <ul>
+      <li><strong>실행 중단 후 재개:</strong> 그래프 실행이 중간에 멈추더라도 마지막 체크포인트에서 다시 시작할 수 있다.</li>
+      <li><strong>Human-in-the-Loop:</strong> <code>interrupt()</code>로 실행을 일시 정지하고 사람의 입력을 받은 후 재개할 수 있다 (Chapter 8에서 다룸).</li>
+      <li><strong>대화 히스토리 유지:</strong> 멀티턴 대화에서 이전 대화 내용을 기억하고 맥락을 유지할 수 있다.</li>
+      <li><strong>실행 되감기(Rewind):</strong> 이전 단계의 상태로 되돌아가 다른 경로로 실행할 수 있다.</li>
+      <li><strong>장애 복구:</strong> 서버가 중간에 다운되어도 마지막 체크포인트에서 복구할 수 있다.</li>
+    </ul>
+
+    <div class="diagram">
+체크포인팅 동작 원리
+
+  invoke() 호출
+       │
+       ▼
+  ┌─────────┐   저장    ┌──────────────┐
+  │  START   │────────▶│ Checkpoint 0 │
+  └────┬────┘          └──────────────┘
+       │
+       ▼
+  ┌─────────┐   저장    ┌──────────────┐
+  │ Node A  │────────▶│ Checkpoint 1 │
+  └────┬────┘          └──────────────┘
+       │
+       ▼
+  ┌─────────┐   저장    ┌──────────────┐
+  │ Node B  │────────▶│ Checkpoint 2 │
+  └────┬────┘          └──────────────┘
+       │
+       ▼
+  ┌─────────┐   저장    ┌──────────────┐
+  │   END   │────────▶│ Checkpoint 3 │
+  └─────────┘          └──────────────┘
+
+  * 각 노드 실행 후 상태 스냅샷이 자동으로 저장된다
+  * 어떤 체크포인트로든 되돌아갈 수 있다
+    </div>
+
+    <div class="info-box info-box--info">
+      <div class="info-box__title">INFO</div>
+      <p>
+        <strong>Superstep</strong>이란 그래프 실행의 한 단계를 의미한다.
+        하나의 노드가 실행되면 하나의 superstep이 완료되고,
+        이때 체크포인트가 저장된다.
+        병렬로 실행되는 여러 노드도 하나의 superstep으로 간주된다.
+      </p>
+    </div>
+
+    <!-- 섹션 2: InMemorySaver -->
+    <h2>InMemorySaver</h2>
+
+    <p>
+      <code>InMemorySaver</code>는 LangGraph에서 기본 제공하는
+      메모리 기반 체크포인터이다.
+      프로세스의 메모리(RAM)에 상태를 저장하므로
+      별도의 데이터베이스 설치가 필요 없고 설정이 간단하다.
+      개발, 테스트, 프로토타이핑 단계에서 주로 사용한다.
+    </p>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-python">from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.graph import StateGraph, START, END
+from typing_extensions import TypedDict
+
+
+# 상태 정의
+class State(TypedDict):
+    messages: list[dict]
+    summary: str
+
+
+# 그래프 정의
+graph = StateGraph(State)
+# ... 노드와 엣지 추가 ...
+
+# InMemorySaver 생성 및 그래프 컴파일
+checkpointer = InMemorySaver()
+app = graph.compile(checkpointer=checkpointer)</code></pre>
+    </div>
+
+    <p>
+      <code>InMemorySaver</code>의 특징은 다음과 같다:
+    </p>
+
+    <table>
+      <thead>
+        <tr>
+          <th>특징</th>
+          <th>설명</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>저장 위치</strong></td>
+          <td>프로세스 메모리 (RAM)</td>
+        </tr>
+        <tr>
+          <td><strong>영속성</strong></td>
+          <td>프로세스 종료 시 데이터 소멸</td>
+        </tr>
+        <tr>
+          <td><strong>설치</strong></td>
+          <td>추가 설치 불필요 (langgraph에 포함)</td>
+        </tr>
+        <tr>
+          <td><strong>적합한 용도</strong></td>
+          <td>개발, 테스트, 프로토타이핑</td>
+        </tr>
+        <tr>
+          <td><strong>멀티 프로세스</strong></td>
+          <td>지원하지 않음 (단일 프로세스 내에서만 유효)</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="info-box info-box--warning">
+      <div class="info-box__title">WARNING</div>
+      <p>
+        <code>InMemorySaver</code>는 프로세스가 종료되면 모든 데이터가 사라진다.
+        프로덕션 환경에서는 SQLite, PostgreSQL 등 영속적 체크포인터를 사용해야 한다.
+        이에 대해서는 이 챕터 후반부에서 다룬다.
+      </p>
+    </div>
+
+    <!-- 섹션 3: Thread 기반 대화 -->
+    <h2>Thread 기반 대화</h2>
+
+    <p>
+      체크포인터를 사용하면 <code>thread_id</code>를 기반으로
+      여러 개의 독립적인 대화(세션)를 관리할 수 있다.
+      같은 <code>thread_id</code>를 사용하면 이전 대화의 맥락이 유지되고,
+      다른 <code>thread_id</code>를 사용하면 완전히 새로운 대화가 시작된다.
+    </p>
+
+    <p>
+      이 메커니즘은 채팅봇, 고객 상담 에이전트 등
+      멀티턴 대화가 필요한 모든 애플리케이션에서 핵심적인 역할을 한다.
+    </p>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-python">from typing import Annotated
+from typing_extensions import TypedDict
+from langgraph.graph import StateGraph, START, END, MessagesState
+from langgraph.checkpoint.memory import InMemorySaver
+from langchain_openai import ChatOpenAI
+
+
+# MessagesState를 사용하면 messages 필드가 자동으로 정의된다
+# messages에 Annotated[list, add_messages] 리듀서가 적용되어
+# 새 메시지가 기존 리스트에 추가된다
+
+llm = ChatOpenAI(model="gpt-4o-mini")
+
+
+def chatbot(state: MessagesState) -> dict:
+    """LLM을 호출하여 응답을 생성하는 노드"""
+    response = llm.invoke(state["messages"])
+    return {"messages": [response]}
+
+
+# 그래프 구성
+graph = StateGraph(MessagesState)
+graph.add_node("chatbot", chatbot)
+graph.add_edge(START, "chatbot")
+graph.add_edge("chatbot", END)
+
+checkpointer = InMemorySaver()
+app = graph.compile(checkpointer=checkpointer)
+
+
+# === 첫 번째 대화 (user-1) ===
+config1 = {"configurable": {"thread_id": "user-1"}}
+
+# 첫 번째 메시지
+result1 = app.invoke(
+    {"messages": [{"role": "user", "content": "안녕! 내 이름은 김철수야."}]},
+    config1
+)
+print(result1["messages"][-1].content)
+# → "안녕하세요, 김철수님! 반갑습니다. 무엇을 도와드릴까요?"
+
+# 같은 thread_id로 이어서 대화 — 이전 대화를 기억한다
+result2 = app.invoke(
+    {"messages": [{"role": "user", "content": "내 이름이 뭐였지?"}]},
+    config1
+)
+print(result2["messages"][-1].content)
+# → "김철수라고 하셨습니다!"
+
+
+# === 두 번째 대화 (user-2) — 완전히 별개 ===
+config2 = {"configurable": {"thread_id": "user-2"}}
+
+result3 = app.invoke(
+    {"messages": [{"role": "user", "content": "내 이름이 뭐였지?"}]},
+    config2
+)
+print(result3["messages"][-1].content)
+# → "죄송합니다, 이전에 이름을 알려주신 적이 없는 것 같습니다."</code></pre>
+    </div>
+
+    <p>
+      위 예제에서 핵심은 <code>config</code>의 <code>thread_id</code> 값이다.
+      같은 <code>thread_id</code>(<code>"user-1"</code>)를 사용하면
+      체크포인터가 이전 대화 히스토리를 불러와서 메시지 목록에 이어 붙인다.
+      따라서 LLM은 이전 대화의 맥락을 알고 있는 상태에서 응답을 생성한다.
+    </p>
+
+    <div class="info-box info-box--tip">
+      <div class="info-box__title">TIP</div>
+      <p>
+        <code>thread_id</code>는 문자열이면 어떤 값이든 사용할 수 있다.
+        사용자 ID, 세션 ID, UUID 등을 활용하여
+        각 대화를 고유하게 식별하면 된다.
+        예: <code>"user-42-session-2024-01-15"</code>
+      </p>
+    </div>
+
+    <h3>대화 히스토리 누적 구조</h3>
+
+    <p>
+      <code>MessagesState</code>를 사용하면 메시지가 어떻게 누적되는지
+      단계별로 살펴보겠다:
+    </p>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-python"># 1회차 invoke 후 state["messages"]:
+# [
+#   HumanMessage("안녕! 내 이름은 김철수야."),
+#   AIMessage("안녕하세요, 김철수님! ...")
+# ]
+
+# 2회차 invoke 후 state["messages"]:
+# [
+#   HumanMessage("안녕! 내 이름은 김철수야."),
+#   AIMessage("안녕하세요, 김철수님! ..."),
+#   HumanMessage("내 이름이 뭐였지?"),        ← 새로 추가됨
+#   AIMessage("김철수라고 하셨습니다!")         ← 새로 추가됨
+# ]
+
+# 3회차 invoke 후 state["messages"]:
+# [
+#   HumanMessage("안녕! 내 이름은 김철수야."),
+#   AIMessage("안녕하세요, 김철수님! ..."),
+#   HumanMessage("내 이름이 뭐였지?"),
+#   AIMessage("김철수라고 하셨습니다!"),
+#   HumanMessage("파이썬 배우고 싶어"),         ← 새로 추가됨
+#   AIMessage("좋은 선택이네요, 김철수님! ...") ← 새로 추가됨
+# ]</code></pre>
+    </div>
+
+    <p>
+      이처럼 <code>MessagesState</code>의 <code>add_messages</code> 리듀서가
+      새 메시지를 기존 메시지 리스트에 자동으로 이어 붙여 준다.
+      LLM은 매번 전체 메시지 히스토리를 입력으로 받기 때문에
+      이전 대화의 맥락을 자연스럽게 파악할 수 있다.
+    </p>
+
+    <!-- 섹션 4: 상태 조회 -->
+    <h2>상태 조회</h2>
+
+    <p>
+      체크포인터에 저장된 상태는 <code>get_state()</code> 메서드로 직접 조회할 수 있다.
+      현재 상태의 값, 다음 실행될 노드, 메타데이터 등 다양한 정보를 확인할 수 있어
+      디버깅이나 모니터링에 매우 유용하다.
+    </p>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-python"># 현재 상태 조회
+state_snapshot = app.get_state(config1)
+
+# 상태 값 확인
+print("=== 현재 상태 ===")
+print(f"상태 값: {state_snapshot.values}")
+
+# 메시지 목록 확인
+messages = state_snapshot.values.get("messages", [])
+for msg in messages:
+    role = "사용자" if msg.type == "human" else "AI"
+    print(f"  [{role}] {msg.content}")
+
+# 다음 실행될 노드 확인
+print(f"\n다음 노드: {state_snapshot.next}")
+# 실행이 완료된 상태라면 빈 튜플 ()
+
+# 설정 정보 확인
+print(f"설정: {state_snapshot.config}")
+
+# 메타데이터 확인
+print(f"메타데이터: {state_snapshot.metadata}")
+# 예: {'step': 2, 'source': 'loop', ...}
+
+# 체크포인트 ID 확인 (되감기 시 사용)
+print(f"체크포인트 ID: {state_snapshot.config['configurable']['checkpoint_id']}")</code></pre>
+    </div>
+
+    <p>
+      <code>get_state()</code>가 반환하는 <code>StateSnapshot</code> 객체의 주요 속성은 다음과 같다:
+    </p>
+
+    <table>
+      <thead>
+        <tr>
+          <th>속성</th>
+          <th>타입</th>
+          <th>설명</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>values</code></td>
+          <td><code>dict</code></td>
+          <td>현재 상태 값 (State의 내용)</td>
+        </tr>
+        <tr>
+          <td><code>next</code></td>
+          <td><code>tuple[str]</code></td>
+          <td>다음 실행될 노드 이름들</td>
+        </tr>
+        <tr>
+          <td><code>config</code></td>
+          <td><code>dict</code></td>
+          <td>현재 체크포인트의 설정 (checkpoint_id 포함)</td>
+        </tr>
+        <tr>
+          <td><code>metadata</code></td>
+          <td><code>dict</code></td>
+          <td>step 번호, 소스 등 메타 정보</td>
+        </tr>
+        <tr>
+          <td><code>tasks</code></td>
+          <td><code>tuple</code></td>
+          <td>현재 실행 중이거나 대기 중인 태스크 정보</td>
+        </tr>
+        <tr>
+          <td><code>parent_config</code></td>
+          <td><code>dict | None</code></td>
+          <td>이전 체크포인트의 설정 (되감기 시 사용)</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- 섹션 5: 상태 히스토리 -->
+    <h2>상태 히스토리</h2>
+
+    <p>
+      <code>get_state_history()</code> 메서드를 사용하면
+      특정 스레드의 모든 체크포인트를 시간 역순으로 조회할 수 있다.
+      그래프가 실행되면서 각 단계(superstep)마다 저장된
+      상태 스냅샷의 전체 히스토리를 확인할 수 있어,
+      실행 과정을 추적하거나 특정 시점으로 되돌아가는 데 활용할 수 있다.
+    </p>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-python"># 상태 히스토리 조회 (최신 → 과거 순)
+print("=== 상태 히스토리 ===\n")
+
+for state_snapshot in app.get_state_history(config1):
+    step = state_snapshot.metadata.get("step", "?")
+    source = state_snapshot.metadata.get("source", "?")
+    checkpoint_id = state_snapshot.config["configurable"]["checkpoint_id"]
+
+    print(f"--- Step {step} (source: {source}) ---")
+    print(f"  Checkpoint ID: {checkpoint_id}")
+    print(f"  다음 노드: {state_snapshot.next}")
+
+    # 메시지 수 확인
+    messages = state_snapshot.values.get("messages", [])
+    print(f"  메시지 수: {len(messages)}")
+    if messages:
+        last_msg = messages[-1]
+        role = "사용자" if last_msg.type == "human" else "AI"
+        content_preview = last_msg.content[:50]
+        print(f"  마지막 메시지: [{role}] {content_preview}...")
+    print()</code></pre>
+    </div>
+
+    <p>
+      출력 예시는 다음과 같다:
+    </p>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-bash">=== 상태 히스토리 ===
+
+--- Step 2 (source: loop) ---
+  Checkpoint ID: 1ef8a3b2-...
+  다음 노드: ()
+  메시지 수: 4
+  마지막 메시지: [AI] 김철수라고 하셨습니다!...
+
+--- Step 1 (source: input) ---
+  Checkpoint ID: 1ef8a3b1-...
+  다음 노드: ('chatbot',)
+  메시지 수: 3
+  마지막 메시지: [사용자] 내 이름이 뭐였지?...
+
+--- Step 0 (source: loop) ---
+  Checkpoint ID: 1ef8a3b0-...
+  다음 노드: ()
+  메시지 수: 2
+  마지막 메시지: [AI] 안녕하세요, 김철수님! 반갑습니다...
+
+--- Step -1 (source: input) ---
+  Checkpoint ID: 1ef8a3af-...
+  다음 노드: ('chatbot',)
+  메시지 수: 1
+  마지막 메시지: [사용자] 안녕! 내 이름은 김철수야....
+</code></pre>
+    </div>
+
+    <h3>특정 체크포인트로 되감기</h3>
+
+    <p>
+      히스토리에서 특정 체크포인트의 <code>config</code>를 사용하면
+      그 시점의 상태로 되돌아가 다시 실행할 수 있다.
+      이는 "만약 다른 선택을 했다면?" 같은 시나리오를 탐색하거나,
+      잘못된 실행을 이전 시점으로 되돌릴 때 유용하다.
+    </p>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-python"># 히스토리에서 원하는 체크포인트 찾기
+target_config = None
+for state_snapshot in app.get_state_history(config1):
+    if state_snapshot.metadata.get("step") == 0:
+        # Step 0 (첫 번째 응답 직후)의 설정을 가져온다
+        target_config = state_snapshot.config
+        break
+
+if target_config:
+    # 해당 체크포인트에서 다시 실행
+    # 이전 대화("내 이름이 뭐였지?") 이후의 히스토리가 사라지고
+    # 새로운 대화를 시작할 수 있다
+    result = app.invoke(
+        {"messages": [{"role": "user", "content": "파이썬에 대해 알려줘"}]},
+        target_config
+    )
+    print(result["messages"][-1].content)</code></pre>
+    </div>
+
+    <!-- 섹션 6: 상태 수정 (update_state) -->
+    <h2>상태 수정 (update_state)</h2>
+
+    <p>
+      <code>update_state()</code> 메서드를 사용하면
+      체크포인터에 저장된 상태를 외부에서 직접 수정할 수 있다.
+      이 기능은 다음과 같은 상황에서 유용하다:
+    </p>
+
+    <ul>
+      <li><strong>메시지 수정:</strong> AI가 잘못된 응답을 했을 때 수동으로 메시지를 교체한다.</li>
+      <li><strong>상태 초기화:</strong> 특정 필드를 리셋하거나 초기값으로 되돌린다.</li>
+      <li><strong>시스템 메시지 주입:</strong> 대화 도중에 시스템 메시지를 추가한다.</li>
+      <li><strong>디버깅:</strong> 테스트 중 상태를 특정 값으로 설정하여 동작을 확인한다.</li>
+    </ul>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-python">from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+
+# 현재 상태 확인
+current_state = app.get_state(config1)
+print(f"현재 메시지 수: {len(current_state.values['messages'])}")
+
+# 방법 1: 새 메시지 추가
+# MessagesState의 add_messages 리듀서에 의해 기존 메시지에 추가된다
+app.update_state(
+    config1,
+    {"messages": [SystemMessage(content="사용자는 초보 프로그래머입니다. 쉽게 설명해 주세요.")]}
+)
+
+# 방법 2: 특정 노드로부터 상태를 수정한 것처럼 처리
+# as_node 파라미터로 어떤 노드가 이 수정을 한 것인지 지정할 수 있다
+app.update_state(
+    config1,
+    {"messages": [AIMessage(content="수정된 AI 응답입니다.")]},
+    as_node="chatbot"  # chatbot 노드가 이 응답을 생성한 것으로 처리
+)
+
+# 수정 후 상태 확인
+updated_state = app.get_state(config1)
+print(f"수정 후 메시지 수: {len(updated_state.values['messages'])}")
+
+# 수정된 상태에서 이어서 대화
+result = app.invoke(
+    {"messages": [{"role": "user", "content": "계속 설명해 줘"}]},
+    config1
+)</code></pre>
+    </div>
+
+    <div class="info-box info-box--info">
+      <div class="info-box__title">INFO</div>
+      <p>
+        <code>update_state()</code>에서 <code>as_node</code> 파라미터는 선택사항이다.
+        이 파라미터를 지정하면 해당 노드가 상태를 업데이트한 것으로 처리되어,
+        <code>get_state()</code>에서 <code>next</code> 속성이
+        그 노드 이후에 실행될 노드를 가리키게 된다.
+        예를 들어 <code>as_node="chatbot"</code>으로 지정하면
+        chatbot 노드가 실행을 마친 것으로 간주된다.
+      </p>
+    </div>
+
+    <h3>메시지 교체 (수정)</h3>
+
+    <p>
+      기존 메시지를 수정(교체)하고 싶다면,
+      동일한 <code>id</code>를 가진 새 메시지를 전달한다.
+      <code>add_messages</code> 리듀서는 같은 <code>id</code>의 메시지가 이미 존재하면
+      추가하는 대신 교체한다.
+    </p>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-python"># 현재 마지막 AI 메시지의 ID를 가져온다
+current_state = app.get_state(config1)
+last_ai_msg = current_state.values["messages"][-1]
+print(f"수정 전: {last_ai_msg.content}")
+print(f"메시지 ID: {last_ai_msg.id}")
+
+# 같은 ID로 새 메시지를 만들어 교체한다
+corrected_msg = AIMessage(
+    content="수정된 정확한 응답입니다.",
+    id=last_ai_msg.id  # 기존 메시지의 ID를 사용
+)
+
+app.update_state(config1, {"messages": [corrected_msg]})
+
+# 교체 확인
+updated_state = app.get_state(config1)
+print(f"수정 후: {updated_state.values['messages'][-1].content}")
+# → "수정된 정확한 응답입니다."</code></pre>
+    </div>
+
+    <!-- 섹션 7: 영속적 체크포인터 -->
+    <h2>영속적 체크포인터</h2>
+
+    <p>
+      <code>InMemorySaver</code>는 개발 단계에서 편리하지만,
+      프로세스가 종료되면 모든 데이터가 사라진다.
+      프로덕션 환경에서는 데이터베이스를 사용하는 영속적 체크포인터가 필요하다.
+      LangGraph는 SQLite와 PostgreSQL을 지원하는 영속적 체크포인터를 제공한다.
+    </p>
+
+    <h3>SQLite 체크포인터</h3>
+
+    <p>
+      SQLite는 파일 기반 데이터베이스로, 별도의 서버 설치 없이
+      로컬 파일에 체크포인트 데이터를 영속적으로 저장할 수 있다.
+      소규모 프로젝트나 단일 서버 환경에 적합하다.
+    </p>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-bash"># SQLite 체크포인터 설치
+pip install langgraph-checkpoint-sqlite</code></pre>
+    </div>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-python">from langgraph.checkpoint.sqlite import SqliteSaver
+
+# 동기 방식 — context manager 사용
+with SqliteSaver.from_conn_string("checkpoints.db") as checkpointer:
+    app = graph.compile(checkpointer=checkpointer)
+
+    config = {"configurable": {"thread_id": "user-1"}}
+
+    # 대화 실행
+    result = app.invoke(
+        {"messages": [{"role": "user", "content": "안녕하세요!"}]},
+        config
+    )
+    # checkpoints.db 파일에 상태가 저장된다
+
+# 프로세스를 재시작해도 이전 대화가 유지된다
+with SqliteSaver.from_conn_string("checkpoints.db") as checkpointer:
+    app = graph.compile(checkpointer=checkpointer)
+
+    # 같은 thread_id로 이어서 대화
+    result = app.invoke(
+        {"messages": [{"role": "user", "content": "아까 무슨 대화를 했었지?"}]},
+        config
+    )
+    # 이전 대화를 기억하고 답변한다</code></pre>
+    </div>
+
+    <h3>비동기 SQLite 체크포인터</h3>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-python">from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+
+# 비동기 방식
+async with AsyncSqliteSaver.from_conn_string("checkpoints.db") as checkpointer:
+    app = graph.compile(checkpointer=checkpointer)
+
+    result = await app.ainvoke(
+        {"messages": [{"role": "user", "content": "안녕!"}]},
+        config
+    )</code></pre>
+    </div>
+
+    <h3>PostgreSQL 체크포인터</h3>
+
+    <p>
+      대규모 프로덕션 환경에서는 PostgreSQL 기반 체크포인터를 사용한다.
+      멀티 프로세스/멀티 서버 환경에서도 안전하게 동작하며,
+      높은 동시성과 확장성을 제공한다.
+    </p>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-bash"># PostgreSQL 체크포인터 설치
+pip install langgraph-checkpoint-postgres</code></pre>
+    </div>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-python">from langgraph.checkpoint.postgres import PostgresSaver
+
+DB_URI = "postgresql://user:password@localhost:5432/mydb"
+
+with PostgresSaver.from_conn_string(DB_URI) as checkpointer:
+    # 테이블 자동 생성 (최초 1회)
+    checkpointer.setup()
+
+    app = graph.compile(checkpointer=checkpointer)
+
+    config = {"configurable": {"thread_id": "user-1"}}
+    result = app.invoke(
+        {"messages": [{"role": "user", "content": "안녕하세요!"}]},
+        config
+    )</code></pre>
+    </div>
+
+    <p>
+      각 체크포인터의 비교는 다음과 같다:
+    </p>
+
+    <table>
+      <thead>
+        <tr>
+          <th>체크포인터</th>
+          <th>영속성</th>
+          <th>설치</th>
+          <th>적합한 환경</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>InMemorySaver</code></td>
+          <td>없음 (프로세스 종료 시 소멸)</td>
+          <td>기본 포함</td>
+          <td>개발, 테스트</td>
+        </tr>
+        <tr>
+          <td><code>SqliteSaver</code></td>
+          <td>파일 기반 영속</td>
+          <td><code>langgraph-checkpoint-sqlite</code></td>
+          <td>소규모, 단일 서버</td>
+        </tr>
+        <tr>
+          <td><code>PostgresSaver</code></td>
+          <td>DB 기반 영속</td>
+          <td><code>langgraph-checkpoint-postgres</code></td>
+          <td>프로덕션, 멀티 서버</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- 섹션 8: 실전 예제 — 기억하는 대화 에이전트 -->
+    <h2>실전 예제: 기억하는 대화 에이전트</h2>
+
+    <p>
+      이제 체크포인팅을 활용하여 사용자 정보를 기억하고,
+      여러 세션에 걸쳐 맞춤형 답변을 제공하는 대화 에이전트를 구현한다.
+      이 에이전트는 사용자의 이름, 관심사, 선호도 등을 대화에서 자동으로 추출하여
+      상태에 저장하고, 이후 대화에서 이 정보를 활용한다.
+    </p>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-python">from typing import Annotated
+from typing_extensions import TypedDict
+from langgraph.graph import StateGraph, START, END
+from langgraph.checkpoint.memory import InMemorySaver
+from langchain_openai import ChatOpenAI
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+import json
+
+
+# 1. 상태 정의
+class ConversationState(TypedDict):
+    messages: Annotated[list, lambda x, y: x + y]  # 메시지 누적
+    user_profile: dict  # 사용자 프로필 정보
+
+
+# 2. LLM 설정
+llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.7)
+
+
+# 3. 프로필 추출 노드
+def extract_profile(state: ConversationState) -> dict:
+    """대화에서 사용자 정보를 추출하는 노드"""
+    current_profile = state.get("user_profile", {})
+    last_message = state["messages"][-1]
+
+    # LLM에게 사용자 정보 추출을 요청
+    extraction_prompt = f"""다음 사용자 메시지에서 사용자에 대한 정보를 추출해 주세요.
+기존 프로필: {json.dumps(current_profile, ensure_ascii=False)}
+
+사용자 메시지: {last_message.content if hasattr(last_message, 'content') else last_message['content']}
+
+추출 가능한 정보가 있으면 JSON으로 반환하세요.
+가능한 키: name, age, job, interests, preferences, location
+정보가 없으면 빈 객체 {{}}를 반환하세요.
+JSON만 반환하세요. 다른 텍스트는 포함하지 마세요."""
+
+    response = llm.invoke(extraction_prompt)
+
+    try:
+        new_info = json.loads(response.content.strip())
+        # 기존 프로필에 새 정보 병합
+        updated_profile = {**current_profile, **new_info}
+        return {"user_profile": updated_profile}
+    except json.JSONDecodeError:
+        return {"user_profile": current_profile}
+
+
+# 4. 응답 생성 노드
+def generate_response(state: ConversationState) -> dict:
+    """사용자 프로필을 활용하여 맞춤형 응답을 생성하는 노드"""
+    profile = state.get("user_profile", {})
+
+    # 프로필 정보를 시스템 메시지에 포함
+    profile_text = ""
+    if profile:
+        profile_text = f"""
+사용자 프로필 정보:
+{json.dumps(profile, ensure_ascii=False, indent=2)}
+
+위 정보를 자연스럽게 활용하여 개인화된 응답을 제공하세요.
+사용자의 이름을 알고 있다면 이름을 불러주세요.
+사용자의 관심사와 관련된 추천이나 조언을 해주세요."""
+
+    system_msg = SystemMessage(content=f"""당신은 친절하고 기억력이 좋은 AI 어시스턴트입니다.
+이전 대화에서 알게 된 사용자 정보를 기억하고 활용합니다.
+{profile_text}""")
+
+    # 시스템 메시지 + 대화 히스토리로 응답 생성
+    all_messages = [system_msg] + state["messages"]
+    response = llm.invoke(all_messages)
+
+    return {"messages": [response]}
+
+
+# 5. 그래프 구성
+graph = StateGraph(ConversationState)
+
+graph.add_node("extract_profile", extract_profile)
+graph.add_node("generate_response", generate_response)
+
+graph.add_edge(START, "extract_profile")
+graph.add_edge("extract_profile", "generate_response")
+graph.add_edge("generate_response", END)
+
+checkpointer = InMemorySaver()
+app = graph.compile(checkpointer=checkpointer)
+
+
+# 6. 대화 헬퍼 함수
+def chat(user_input: str, thread_id: str = "default") -> str:
+    """대화를 편리하게 수행하는 헬퍼 함수"""
+    config = {"configurable": {"thread_id": thread_id}}
+    result = app.invoke(
+        {"messages": [HumanMessage(content=user_input)]},
+        config
+    )
+    return result["messages"][-1].content
+
+
+# 7. 실행 예제
+print("=== 세션 1: 자기소개 ===")
+print(chat("안녕! 나는 이민수야. 서울에 사는 개발자고, "
+           "요즘 AI에 관심이 많아.", "user-minsu"))
+# → "안녕하세요, 민수님! 서울에서 개발자로 일하고 계시는군요.
+#    AI에 관심이 많으시다니 ..."
+
+print("\n=== 세션 1: 이어서 대화 ===")
+print(chat("좋은 AI 공부 자료 추천해 줄 수 있어?", "user-minsu"))
+# → "민수님, 개발자시니까 실습 위주 자료가 좋을 것 같아요. ..."
+
+print("\n=== 세션 1: 추가 정보 ===")
+print(chat("참고로 나는 파이썬을 주로 쓰고, "
+           "백엔드 개발을 하고 있어.", "user-minsu"))
+# → "파이썬 백엔드 개발자시군요! ..."
+
+print("\n=== 세션 2: 새 세션이지만 같은 thread ===")
+print(chat("내가 뭘 좋아한다고 했었지?", "user-minsu"))
+# → "민수님은 AI에 관심이 많다고 하셨어요.
+#    파이썬을 주로 사용하시고 백엔드 개발을 하신다고 했습니다."
+
+# 프로필 확인
+state = app.get_state({"configurable": {"thread_id": "user-minsu"}})
+print(f"\n=== 저장된 프로필 ===")
+print(json.dumps(state.values.get("user_profile", {}),
+                 ensure_ascii=False, indent=2))
+# {
+#   "name": "이민수",
+#   "location": "서울",
+#   "job": "개발자",
+#   "interests": ["AI"],
+#   "preferences": {"language": "파이썬", "domain": "백엔드"}
+# }</code></pre>
+    </div>
+
+    <p>
+      이 에이전트의 핵심 특징을 정리하면 다음과 같다:
+    </p>
+
+    <ul>
+      <li><strong>자동 프로필 추출:</strong> <code>extract_profile</code> 노드가 매 대화에서 사용자 정보를 자동으로 추출하여 프로필을 점진적으로 구축한다.</li>
+      <li><strong>맞춤형 응답:</strong> <code>generate_response</code> 노드가 프로필 정보를 시스템 메시지에 포함하여 개인화된 응답을 생성한다.</li>
+      <li><strong>세션 간 기억 유지:</strong> 체크포인터 덕분에 같은 <code>thread_id</code>를 사용하면 이전 세션의 대화 히스토리와 프로필이 유지된다.</li>
+      <li><strong>프로필 병합:</strong> 새로운 정보가 발견되면 기존 프로필에 병합하여 점진적으로 사용자 이해도를 높인다.</li>
+    </ul>
+
+    <div class="info-box info-box--tip">
+      <div class="info-box__title">TIP</div>
+      <p>
+        대화가 길어지면 메시지 히스토리도 길어져서 토큰 비용이 증가하고
+        LLM의 컨텍스트 윈도우를 초과할 수 있다.
+        이를 방지하려면 오래된 메시지를 요약하거나,
+        최근 N개의 메시지만 유지하는 전략을 사용한다.
+        또는 <code>trim_messages</code> 유틸리티를 활용하여
+        토큰 수 기준으로 메시지를 잘라낼 수도 있다.
+      </p>
+    </div>
+
+    <!-- 정리 -->
+    <h2>정리</h2>
+
+    <p>이번 챕터에서 배운 내용을 정리한다:</p>
+
+    <ul>
+      <li><strong>체크포인팅</strong>은 그래프 실행의 각 단계마다 상태를 저장하는 메커니즘으로, 실행 재개, HITL, 대화 히스토리 유지 등을 가능하게 한다.</li>
+      <li><code>InMemorySaver</code>는 메모리 기반 체크포인터로 개발/테스트에 적합하다.</li>
+      <li><code>thread_id</code>로 각 대화(세션)를 구분하며, 같은 ID를 사용하면 이전 대화가 이어진다.</li>
+      <li><code>get_state()</code>로 현재 상태를, <code>get_state_history()</code>로 전체 히스토리를 조회할 수 있다.</li>
+      <li><code>update_state()</code>로 외부에서 상태를 직접 수정하거나 메시지를 교체할 수 있다.</li>
+      <li>프로덕션 환경에서는 <code>SqliteSaver</code>나 <code>PostgresSaver</code> 같은 영속적 체크포인터를 사용해야 한다.</li>
+    </ul>
+
+    <p>다음 챕터에서는 스트리밍을 학습하여 에이전트의 실행 과정을 실시간으로 사용자에게 보여주는 방법을 다룬다.</p>
+
+    <nav class="page-nav"></nav>
+  </main>
+</div>
+
+<script src="../js/nav.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-json.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.js"></script>
+</body>
+</html>

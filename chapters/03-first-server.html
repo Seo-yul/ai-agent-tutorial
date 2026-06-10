@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>첫 번째 MCP 서버 - MCP Python SDK 튜토리얼</title>
+  <link rel="stylesheet" href="../css/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.css">
+</head>
+<body>
+
+<header class="site-header">
+  <button class="hamburger" aria-label="메뉴">
+    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+  </button>
+  <a href="../index.html" class="site-header__title"><span>MCP</span> Python SDK 튜토리얼</a>
+  <span class="site-header__badge">v1.12.x</span>
+</header>
+
+<div class="layout">
+  <nav class="sidebar"></nav>
+  <main class="main">
+    <span class="chapter-badge chapter-badge--basic">기본 과정</span>
+    <h1>첫 번째 MCP 서버</h1>
+    <p class="chapter-subtitle">FastMCP로 첫 번째 MCP 서버를 만들고 실행한다</p>
+
+    <!-- 1. FastMCP 소개 -->
+    <section>
+      <h2>FastMCP 소개</h2>
+      <p>
+        <strong>FastMCP</strong>는 MCP Python SDK가 제공하는 고수준(high-level) API이다.
+        복잡한 프로토콜 세부사항을 숨기고, Python 데코레이터만으로 MCP 서버를 구축할 수 있게 해준다.
+      </p>
+      <p>FastMCP의 주요 특징:</p>
+      <ul>
+        <li>데코레이터 기반으로 도구, 리소스, 프롬프트를 간단히 등록한다.</li>
+        <li>함수의 타입 힌트를 자동으로 파싱하여 입력 스키마를 생성한다.</li>
+        <li>함수의 docstring을 도구 설명으로 자동 사용한다.</li>
+        <li>동기/비동기 함수를 모두 지원한다.</li>
+      </ul>
+    </section>
+
+    <!-- 2. 최소한의 서버 -->
+    <section>
+      <h2>최소한의 서버</h2>
+      <p>
+        가장 간단한 MCP 서버를 만들어보자.
+        프로젝트 디렉토리에 <code>server.py</code> 파일을 생성하고 다음 코드를 작성한다.
+      </p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python">from mcp.server.fastmcp import FastMCP
+
+# MCP 서버 인스턴스 생성
+mcp = FastMCP("My First Server")
+
+@mcp.tool()
+def add(a: int, b: int) -> int:
+    """두 수를 더한다"""
+    return a + b
+
+if __name__ == "__main__":
+    mcp.run()</code></pre>
+      </div>
+
+      <p>이 10줄의 코드가 완전한 MCP 서버이다. LLM이 <code>add</code> 도구를 호출하면 두 정수를 더한 결과를 반환한다.</p>
+    </section>
+
+    <!-- 3. 코드 분석 -->
+    <section>
+      <h2>코드 분석</h2>
+      <p>각 줄이 무엇을 하는지 자세히 살펴보자.</p>
+
+      <h3>1. FastMCP 임포트 및 인스턴스 생성</h3>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python">from mcp.server.fastmcp import FastMCP
+
+# 서버 이름은 클라이언트가 서버를 식별하는 데 사용된다
+mcp = FastMCP("My First Server")</code></pre>
+      </div>
+      <p>
+        <code>FastMCP</code> 클래스의 인스턴스를 생성한다. 인자로 전달하는 문자열은 서버의 이름이다.
+        이 이름은 클라이언트가 여러 서버를 구분할 때 사용된다.
+      </p>
+
+      <h3>2. 도구 등록</h3>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python">@mcp.tool()
+def add(a: int, b: int) -> int:
+    """두 수를 더한다"""
+    return a + b</code></pre>
+      </div>
+      <p>
+        <code>@mcp.tool()</code> 데코레이터는 일반 Python 함수를 MCP 도구로 등록한다.
+        SDK가 자동으로 처리하는 것들:
+      </p>
+      <ul>
+        <li><strong>함수 이름</strong> → 도구 이름 (<code>add</code>)</li>
+        <li><strong>타입 힌트</strong> (<code>a: int, b: int</code>) → 입력 JSON 스키마</li>
+        <li><strong>docstring</strong> (<code>"두 수를 더한다"</code>) → 도구 설명 (LLM이 언제 이 도구를 쓸지 판단하는 근거)</li>
+        <li><strong>반환 타입</strong> → 자동 직렬화</li>
+      </ul>
+
+      <div class="info-box info-box--warning">
+        <div class="info-box__title">WARNING</div>
+        <p>docstring은 반드시 작성해야 한다. LLM은 docstring을 보고 도구의 용도를 파악한다. docstring이 없으면 LLM이 도구를 올바르게 사용하지 못할 수 있다.</p>
+      </div>
+
+      <h3>3. 서버 실행</h3>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python">if __name__ == "__main__":
+    mcp.run()</code></pre>
+      </div>
+      <p>
+        <code>mcp.run()</code>은 서버를 시작하고 클라이언트의 연결을 대기한다.
+        기본적으로 <strong>stdio</strong>(표준 입출력) 전송 방식을 사용한다.
+        이는 서버와 클라이언트가 같은 머신에서 프로세스 간 통신을 하는 방식이다.
+      </p>
+    </section>
+
+    <!-- 4. 서버 실행 -->
+    <section>
+      <h2>서버 실행</h2>
+      <p>서버를 실행하는 방법은 두 가지가 있다.</p>
+
+      <h3>방법 1: 직접 실행</h3>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-bash"># 서버 직접 실행 (stdio 모드)
+uv run server.py</code></pre>
+      </div>
+      <p>
+        이 방식은 서버가 stdio로 입력을 대기하므로, 터미널에서는 아무 출력도 보이지 않는다.
+        실제 테스트를 위해서는 MCP Inspector를 사용하는 것이 좋다.
+      </p>
+
+      <h3>방법 2: MCP Inspector로 개발 모드 실행 (권장)</h3>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-bash"># MCP Inspector와 함께 개발 모드로 실행
+uv run mcp dev server.py</code></pre>
+      </div>
+      <p>
+        <code>mcp dev</code> 명령은 MCP Inspector를 함께 시작한다.
+        브라우저에서 Inspector UI를 열어 도구를 직접 테스트할 수 있다.
+      </p>
+
+      <div class="info-box info-box--tip">
+        <div class="info-box__title">TIP</div>
+        <p>개발 중에는 항상 <code>mcp dev</code>를 사용하는 것을 권장한다. Inspector에서 도구를 호출하고 결과를 즉시 확인할 수 있어 디버깅이 훨씬 편리하다.</p>
+      </div>
+    </section>
+
+    <!-- 5. MCP Inspector로 테스트 -->
+    <section>
+      <h2>MCP Inspector로 테스트</h2>
+      <p>
+        <code>uv run mcp dev server.py</code>를 실행하면 터미널에 Inspector URL이 표시된다.
+        브라우저에서 해당 URL(보통 <code>http://localhost:5173</code>)을 열면 Inspector UI가 나타난다.
+      </p>
+
+      <p>Inspector에서 테스트하는 순서:</p>
+      <ol>
+        <li>좌측 패널에서 <strong>"Tools"</strong> 탭을 클릭한다.</li>
+        <li>등록된 도구 목록에서 <strong>"add"</strong>를 선택한다.</li>
+        <li>파라미터 입력란에 <code>a: 3</code>, <code>b: 5</code>를 입력한다.</li>
+        <li><strong>"Run Tool"</strong> 버튼을 클릭한다.</li>
+        <li>결과 패널에 <code>8</code>이 표시되는 것을 확인한다.</li>
+      </ol>
+
+      <div class="info-box info-box--info">
+        <div class="info-box__title">INFO</div>
+        <p>MCP Inspector는 MCP SDK에 포함된 개발 도구이다. 서버의 모든 도구, 리소스, 프롬프트를 탐색하고 테스트할 수 있는 웹 UI를 제공한다.</p>
+      </div>
+    </section>
+
+    <!-- 6. 리소스와 프롬프트 추가 -->
+    <section>
+      <h2>리소스와 프롬프트 추가</h2>
+      <p>
+        서버에 도구만 있는 것이 아니라, 리소스(Resource)와 프롬프트(Prompt)도 추가해보자.
+        앞서 만든 <code>server.py</code>를 확장한다.
+      </p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python">from mcp.server.fastmcp import FastMCP
+
+mcp = FastMCP("My First Server")
+
+# ── 도구 (Tool) ─────────────────────────────
+@mcp.tool()
+def add(a: int, b: int) -> int:
+    """두 수를 더한다"""
+    return a + b
+
+@mcp.tool()
+def multiply(a: int, b: int) -> int:
+    """두 수를 곱한다"""
+    return a * b
+
+# ── 리소스 (Resource) ────────────────────────
+@mcp.resource("greeting://{name}")
+def get_greeting(name: str) -> str:
+    """개인화된 인사말을 반환한다"""
+    return f"안녕하세요, {name}님! MCP 서버에 오신 것을 환영한다."
+
+@mcp.resource("config://app")
+def get_config() -> dict:
+    """애플리케이션 설정을 반환한다"""
+    return {
+        "app_name": "MCP Demo",
+        "version": "1.0.0",
+        "debug": True
+    }
+
+# ── 프롬프트 (Prompt) ────────────────────────
+@mcp.prompt()
+def review_code(code: str) -> str:
+    """코드 리뷰 프롬프트"""
+    return f"다음 코드를 리뷰해주세요:\n\n{code}"
+
+@mcp.prompt()
+def explain_error(error_message: str) -> str:
+    """에러 설명 프롬프트"""
+    return f"다음 에러 메시지를 분석하고 해결 방법을 제안해주세요:\n\n{error_message}"
+
+if __name__ == "__main__":
+    mcp.run()</code></pre>
+      </div>
+
+      <p>각 프리미티브의 데코레이터를 정리하면 다음과 같다:</p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>프리미티브</th>
+            <th>데코레이터</th>
+            <th>특징</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Tool</td>
+            <td><code>@mcp.tool()</code></td>
+            <td>LLM이 호출. 계산, API 호출 등 동작 수행.</td>
+          </tr>
+          <tr>
+            <td>Resource</td>
+            <td><code>@mcp.resource("uri://{param}")</code></td>
+            <td>URI 패턴으로 데이터 노출. 읽기 전용.</td>
+          </tr>
+          <tr>
+            <td>Prompt</td>
+            <td><code>@mcp.prompt()</code></td>
+            <td>재사용 가능한 프롬프트 템플릿.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box info-box--tip">
+        <div class="info-box__title">TIP</div>
+        <p>리소스 URI에서 <code>{name}</code>과 같은 중괄호 부분은 경로 파라미터이다. <code>greeting://Alice</code>로 요청하면 <code>name</code>에 <code>"Alice"</code>가 전달된다.</p>
+      </div>
+    </section>
+
+    <!-- 다음 챕터 안내 -->
+    <section>
+      <h2>다음 단계</h2>
+      <p>
+        첫 번째 MCP 서버를 성공적으로 만들고 실행해보았다.
+        다음 챕터에서는 도구(Tools)의 다양한 기능과 패턴을 심도 있게 다룬다.
+        비동기 도구, 에러 처리, Context 활용 등을 배울 것이다.
+      </p>
+    </section>
+
+    <nav class="page-nav"></nav>
+  </main>
+</div>
+
+<script src="../js/nav.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.js"></script>
+</body>
+</html>

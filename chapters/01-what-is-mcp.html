@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MCP란 무엇인가 - MCP Python SDK 튜토리얼</title>
+  <link rel="stylesheet" href="../css/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.css">
+</head>
+<body>
+
+<header class="site-header">
+  <button class="hamburger" aria-label="메뉴">
+    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+  </button>
+  <a href="../index.html" class="site-header__title"><span>MCP</span> Python SDK 튜토리얼</a>
+  <span class="site-header__badge">v1.12.x</span>
+</header>
+
+<div class="layout">
+  <nav class="sidebar"></nav>
+  <main class="main">
+    <span class="chapter-badge chapter-badge--basic">기본 과정</span>
+    <h1>MCP란 무엇인가</h1>
+    <p class="chapter-subtitle">Model Context Protocol의 개념과 아키텍처를 이해한다</p>
+
+    <!-- 1. MCP란? -->
+    <section>
+      <h2>MCP란?</h2>
+      <p>
+        <strong>MCP(Model Context Protocol)</strong>는 Anthropic이 만든 개방형 프로토콜이다.
+        LLM 애플리케이션이 외부 데이터 소스 및 도구와 통신하기 위한 <em>표준 인터페이스</em>를 정의한다.
+      </p>
+      <p>
+        USB-C가 하나의 커넥터로 충전, 데이터 전송, 영상 출력을 모두 처리하듯이,
+        MCP는 하나의 프로토콜로 LLM이 다양한 외부 서비스와 소통할 수 있게 해준다.
+        즉, <strong>AI를 위한 USB-C</strong>라고 할 수 있다.
+      </p>
+
+      <div class="info-box info-box--info">
+        <div class="info-box__title">INFO</div>
+        <p>MCP는 2024년 11월 Anthropic에 의해 오픈 소스로 공개되었으며, 현재 다양한 LLM 애플리케이션에서 채택되고 있다.</p>
+      </div>
+    </section>
+
+    <!-- 2. 왜 MCP가 필요한가? -->
+    <section>
+      <h2>왜 MCP가 필요한가?</h2>
+      <p>
+        MCP가 없던 시절을 생각해보자.
+        N개의 LLM 애플리케이션과 M개의 외부 도구가 있다면,
+        각 앱이 각 도구에 대한 연동 코드를 따로 작성해야 한다.
+        이는 <strong>N &times; M</strong>개의 통합 코드를 만들어야 한다는 뜻이다.
+      </p>
+
+      <div class="diagram">
+        <pre>
+  MCP 없이 (N × M 문제)                  MCP 사용 (N + M 해결)
+  ─────────────────────                  ─────────────────────
+
+  Claude Desktop ──┬── Slack             Claude Desktop ──┐
+  Cursor       ──┼── GitHub                  Cursor ──┤
+  VS Code      ──┼── PostgreSQL            VS Code ──┤
+  Custom App   ──┴── Google Drive        Custom App ──┘
+                                                      │
+  각 앱이 모든 도구에 대해                         MCP 프로토콜
+  개별 연동 필요 → 12개 연동                         │
+                                                ┌────┴────┐
+                                             Slack  GitHub ...
+                                            서버    서버
+
+                                          각 도구는 MCP 서버 1개만
+                                          만들면 됨 → 4 + 4 = 8개 연동
+        </pre>
+      </div>
+
+      <p>
+        MCP를 사용하면 각 도구는 MCP 서버를 하나만 구현하면 되고,
+        각 LLM 앱은 MCP 클라이언트를 하나만 구현하면 된다.
+        결과적으로 <strong>N + M</strong>개의 통합만 필요하다.
+      </p>
+    </section>
+
+    <!-- 3. MCP 아키텍처 -->
+    <section>
+      <h2>MCP 아키텍처</h2>
+      <p>MCP 아키텍처는 3가지 핵심 구성요소로 이루어진다.</p>
+
+      <div class="diagram">
+        <pre>
+  ┌─────────────────────────────────────────────────┐
+  │                    Host                         │
+  │           (LLM 애플리케이션)                      │
+  │                                                 │
+  │   ┌────────────┐  ┌────────────┐                │
+  │   │  Client A  │  │  Client B  │   ...          │
+  │   └──────┬─────┘  └──────┬─────┘                │
+  └──────────┼───────────────┼──────────────────────┘
+             │               │
+      MCP 프로토콜       MCP 프로토콜
+        (1:1 연결)        (1:1 연결)
+             │               │
+  ┌──────────┴──────┐ ┌──────┴──────────┐
+  │    Server A     │ │    Server B     │
+  │  (파일 시스템)   │ │   (데이터베이스) │
+  └─────────────────┘ └─────────────────┘
+        </pre>
+      </div>
+
+      <h3>Host (호스트)</h3>
+      <p>
+        사용자가 직접 상호작용하는 LLM 애플리케이션이다.
+        Claude Desktop, IDE(Cursor, VS Code), 또는 직접 만든 AI 앱이 해당된다.
+        Host는 하나 이상의 Client를 내부에 관리한다.
+      </p>
+
+      <h3>Client (클라이언트)</h3>
+      <p>
+        Host 내부에서 동작하며, 하나의 Server와 <strong>1:1 연결</strong>을 유지한다.
+        프로토콜 협상, 메시지 라우팅, 기능(capability) 관리를 담당한다.
+        사용자가 직접 Client를 다루는 경우는 드물다.
+      </p>
+
+      <h3>Server (서버)</h3>
+      <p>
+        외부 도구나 데이터를 MCP 프로토콜로 노출하는 경량 프로그램이다.
+        파일 시스템, 데이터베이스, API 등 다양한 리소스를 LLM이 사용할 수 있도록 만들어준다.
+        <strong>이 튜토리얼에서 우리가 주로 만들게 되는 것이 바로 MCP Server이다.</strong>
+      </p>
+
+      <div class="info-box info-box--tip">
+        <div class="info-box__title">TIP</div>
+        <p>대부분의 MCP 개발은 Server를 만드는 작업이다. Python SDK의 FastMCP 클래스를 사용하면 몇 줄의 코드로 서버를 구축할 수 있다.</p>
+      </div>
+    </section>
+
+    <!-- 4. 3가지 프리미티브 -->
+    <section>
+      <h2>3가지 프리미티브</h2>
+      <p>MCP Server는 3가지 <strong>프리미티브(primitive)</strong>를 통해 기능을 제공한다.</p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>프리미티브</th>
+            <th>설명</th>
+            <th>제어 주체</th>
+            <th>예시</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Tools</strong></td>
+            <td>LLM이 호출하는 함수. 부수 효과(side effect)를 가질 수 있다.</td>
+            <td>모델(LLM)이 호출</td>
+            <td>계산, API 호출, 파일 쓰기</td>
+          </tr>
+          <tr>
+            <td><strong>Resources</strong></td>
+            <td>LLM이 읽는 데이터. 읽기 전용이며 부수 효과가 없다.</td>
+            <td>애플리케이션이 제어</td>
+            <td>파일 내용, DB 레코드, 설정 값</td>
+          </tr>
+          <tr>
+            <td><strong>Prompts</strong></td>
+            <td>미리 정의된 프롬프트 템플릿. 재사용 가능한 상호작용 패턴이다.</td>
+            <td>사용자가 선택</td>
+            <td>코드 리뷰 프롬프트, 번역 프롬프트</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box info-box--warning">
+        <div class="info-box__title">WARNING</div>
+        <p>Tools는 외부 시스템에 변경을 가할 수 있으므로 (예: 파일 삭제, 이메일 전송), 반드시 사용자 확인 과정을 거치도록 설계해야 한다. Resources는 읽기 전용이므로 비교적 안전하다.</p>
+      </div>
+    </section>
+
+    <!-- 5. MCP 통신 흐름 -->
+    <section>
+      <h2>MCP 통신 흐름</h2>
+      <p>사용자가 LLM에 요청을 보내면 MCP 통신이 어떻게 이루어지는지 살펴보자.</p>
+
+      <div class="diagram">
+        <pre>
+  사용자                Host (LLM 앱)             MCP Server
+    │                      │                        │
+    │  "서울 날씨 알려줘"   │                        │
+    │ ────────────────────▶│                        │
+    │                      │                        │
+    │                      │  1. LLM이 도구 필요    │
+    │                      │     여부 판단           │
+    │                      │                        │
+    │                      │  2. Client를 통해      │
+    │                      │     도구 호출 요청      │
+    │                      │ ──────────────────────▶│
+    │                      │                        │
+    │                      │                        │  3. 외부 API 호출
+    │                      │                        │     (날씨 API)
+    │                      │                        │
+    │                      │  4. 결과 반환           │
+    │                      │ ◀──────────────────────│
+    │                      │                        │
+    │                      │  5. LLM이 결과를       │
+    │                      │     자연어로 정리       │
+    │                      │                        │
+    │  "서울의 현재 기온은   │                        │
+    │   15°C이고..."       │                        │
+    │ ◀────────────────────│                        │
+    │                      │                        │
+        </pre>
+      </div>
+
+      <p>핵심 흐름을 정리하면 다음과 같다:</p>
+      <ol>
+        <li><strong>사용자 → Host:</strong> 자연어로 요청을 보낸다.</li>
+        <li><strong>Host 내부 LLM:</strong> 요청을 분석하고, 필요한 도구(Tool)가 있는지 판단한다.</li>
+        <li><strong>Client → Server:</strong> LLM이 도구를 사용하기로 결정하면, Client가 해당 Server에 JSON-RPC 요청을 보낸다.</li>
+        <li><strong>Server:</strong> 요청을 처리하고 (외부 API 호출, 파일 읽기 등) 결과를 반환한다.</li>
+        <li><strong>Host 내부 LLM:</strong> 반환된 결과를 바탕으로 사용자에게 자연어 응답을 생성한다.</li>
+      </ol>
+
+      <div class="info-box info-box--info">
+        <div class="info-box__title">INFO</div>
+        <p>MCP는 <strong>JSON-RPC 2.0</strong>을 기반으로 통신한다. 전송 계층은 stdio(표준 입출력) 또는 Streamable HTTP를 사용할 수 있으며, 로컬 서버는 주로 stdio를, 원격 서버는 Streamable HTTP를 사용한다.</p>
+      </div>
+    </section>
+
+    <!-- 다음 챕터 안내 -->
+    <section>
+      <h2>다음 단계</h2>
+      <p>
+        MCP의 개념과 아키텍처를 이해했으니, 다음 챕터에서는 실제 개발을 위한 환경을 설정해보겠다.
+        Python과 uv를 설치하고 MCP SDK를 사용할 프로젝트를 만들 것이다.
+      </p>
+    </section>
+
+    <nav class="page-nav"></nav>
+  </main>
+</div>
+
+<script src="../js/nav.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.js"></script>
+</body>
+</html>

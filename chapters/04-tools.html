@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tools 심화 - MCP Python SDK 튜토리얼</title>
+  <link rel="stylesheet" href="../css/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.css">
+</head>
+<body>
+
+<header class="site-header">
+  <button class="hamburger" aria-label="메뉴">
+    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+  </button>
+  <a href="../index.html" class="site-header__title"><span>MCP</span> Python SDK 튜토리얼</a>
+  <span class="site-header__badge">v1.12.x</span>
+</header>
+
+<div class="layout">
+  <nav class="sidebar"></nav>
+  <main class="main">
+    <span class="chapter-badge chapter-badge--basic">기본 과정</span>
+    <h1>Tools 심화</h1>
+    <p class="chapter-subtitle">MCP 도구의 다양한 기능과 패턴을 익힌다</p>
+
+    <!-- 1. Tools 개요 -->
+    <section>
+      <h2>Tools 개요</h2>
+      <p>
+        MCP에서 <strong>Tool</strong>은 LLM이 호출할 수 있는 함수이다.
+        리소스(Resource)와 달리, 도구는 <strong>부수 효과(side effect)</strong>를 가질 수 있다.
+        즉, 외부 API를 호출하거나, 파일을 쓰거나, 데이터를 변경하는 작업이 가능하다.
+      </p>
+      <p>도구를 만들 때 기억해야 할 핵심 원칙:</p>
+      <ul>
+        <li><strong>명확한 docstring:</strong> LLM은 docstring을 읽고 도구의 용도를 판단한다.</li>
+        <li><strong>정확한 타입 힌트:</strong> 파라미터의 타입 힌트가 입력 스키마가 된다.</li>
+        <li><strong>적절한 이름:</strong> 함수 이름이 곧 도구 이름이므로, 의미가 명확해야 한다.</li>
+      </ul>
+    </section>
+
+    <!-- 2. 다양한 파라미터 타입 -->
+    <section>
+      <h2>다양한 파라미터 타입</h2>
+      <p>
+        MCP 도구는 Python의 다양한 타입 힌트를 지원한다.
+        기본 타입뿐만 아니라 리스트, 딕셔너리, 선택적 파라미터 등을 사용할 수 있다.
+      </p>
+
+      <h3>기본 타입과 기본값</h3>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python">@mcp.tool()
+def search_files(directory: str, pattern: str, recursive: bool = True) -> list[str]:
+    """지정된 디렉토리에서 패턴과 일치하는 파일을 검색한다
+
+    Args:
+        directory: 검색할 디렉토리 경로
+        pattern: 검색할 파일 패턴 (예: "*.py")
+        recursive: 하위 디렉토리도 검색할지 여부 (기본값: True)
+    """
+    import glob
+    search_path = f"{directory}/**/{pattern}" if recursive else f"{directory}/{pattern}"
+    return glob.glob(search_path, recursive=recursive)</code></pre>
+      </div>
+
+      <p>
+        <code>recursive: bool = True</code>처럼 기본값을 지정하면,
+        LLM은 해당 파라미터를 생략할 수 있다. 기본값이 없는 파라미터는 필수 파라미터가 된다.
+      </p>
+
+      <h3>복합 타입</h3>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python">@mcp.tool()
+def process_data(items: list[dict]) -> dict:
+    """데이터 항목 목록을 처리하고 요약 통계를 반환한다
+
+    Args:
+        items: 처리할 데이터 항목 목록. 각 항목은 딕셔너리 형태이다.
+    """
+    total = len(items)
+    # 각 항목에서 'value' 키의 값을 추출하여 합계 계산
+    values = [item.get("value", 0) for item in items]
+    return {
+        "total_count": total,
+        "sum": sum(values),
+        "average": sum(values) / total if total > 0 else 0
+    }</code></pre>
+      </div>
+
+      <h3>Enum을 활용한 선택지 제한</h3>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python">from enum import Enum
+
+class Priority(str, Enum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+@mcp.tool()
+def create_task(title: str, priority: Priority = Priority.MEDIUM) -> dict:
+    """새 작업을 생성한다
+
+    Args:
+        title: 작업 제목
+        priority: 우선순위 (low, medium, high)
+    """
+    return {
+        "title": title,
+        "priority": priority.value,
+        "status": "created"
+    }</code></pre>
+      </div>
+
+      <div class="info-box info-box--tip">
+        <div class="info-box__title">TIP</div>
+        <p>Enum을 사용하면 LLM이 정해진 선택지 안에서만 값을 입력하므로, 잘못된 값이 들어오는 것을 방지할 수 있다.</p>
+      </div>
+    </section>
+
+    <!-- 3. 비동기 도구 -->
+    <section>
+      <h2>비동기 도구</h2>
+      <p>
+        네트워크 요청, 파일 I/O 등 시간이 오래 걸리는 작업은 <code>async/await</code>를 사용하여 비동기 도구로 만드는 것이 좋다.
+        FastMCP는 동기 함수와 비동기 함수를 모두 지원한다.
+      </p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python">import httpx
+
+@mcp.tool()
+async def fetch_url(url: str) -> str:
+    """URL의 콘텐츠를 가져온다
+
+    Args:
+        url: 가져올 웹 페이지의 URL
+    """
+    async with httpx.AsyncClient() as client:
+        response = await client.get(url)
+        response.raise_for_status()
+        return response.text</code></pre>
+      </div>
+
+      <p>여러 URL을 동시에 가져오는 도구도 만들 수 있다:</p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python">import asyncio
+import httpx
+
+@mcp.tool()
+async def fetch_multiple_urls(urls: list[str]) -> dict[str, str]:
+    """여러 URL의 콘텐츠를 동시에 가져온다
+
+    Args:
+        urls: 가져올 URL 목록
+    """
+    async with httpx.AsyncClient() as client:
+        # 모든 요청을 동시에 실행
+        tasks = [client.get(url) for url in urls]
+        responses = await asyncio.gather(*tasks, return_exceptions=True)
+
+    results = {}
+    for url, response in zip(urls, responses):
+        if isinstance(response, Exception):
+            results[url] = f"에러: {str(response)}"
+        else:
+            results[url] = response.text[:500]  # 처음 500자만
+    return results</code></pre>
+      </div>
+
+      <div class="info-box info-box--info">
+        <div class="info-box__title">INFO</div>
+        <p><code>httpx</code>는 Python의 비동기 HTTP 클라이언트 라이브러리이다. 사용하려면 <code>uv add httpx</code>로 설치해야 한다.</p>
+      </div>
+    </section>
+
+    <!-- 4. 에러 처리 -->
+    <section>
+      <h2>에러 처리</h2>
+      <p>
+        도구 실행 중 에러가 발생할 수 있다. MCP에서는 에러를 적절히 처리하여
+        LLM에게 유용한 에러 메시지를 전달하는 것이 중요하다.
+      </p>
+
+      <h3>기본 에러 처리</h3>
+      <p>
+        도구 함수에서 예외가 발생하면, MCP SDK가 이를 자동으로 잡아서 에러 응답으로 변환한다.
+        하지만 사용자에게 더 명확한 메시지를 주기 위해 직접 처리하는 것이 좋다.
+      </p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python">import os
+
+@mcp.tool()
+def read_file(file_path: str) -> str:
+    """파일의 내용을 읽어 반환한다
+
+    Args:
+        file_path: 읽을 파일의 경로
+    """
+    # 파일 존재 여부 확인
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"파일을 찾을 수 없다: {file_path}")
+
+    # 파일 크기 제한 (10MB)
+    file_size = os.path.getsize(file_path)
+    if file_size > 10 * 1024 * 1024:
+        raise ValueError(f"파일이 너무 크다: {file_size} bytes (최대 10MB)")
+
+    with open(file_path, "r", encoding="utf-8") as f:
+        return f.read()</code></pre>
+      </div>
+
+      <h3>try-except 패턴</h3>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python">import json
+
+@mcp.tool()
+def parse_json(text: str) -> dict:
+    """JSON 문자열을 파싱하여 딕셔너리로 반환한다
+
+    Args:
+        text: 파싱할 JSON 문자열
+    """
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"유효하지 않은 JSON 형식이다: {e.msg} (위치: {e.pos})")</code></pre>
+      </div>
+
+      <div class="info-box info-box--warning">
+        <div class="info-box__title">WARNING</div>
+        <p>도구에서 발생한 예외의 메시지는 LLM에게 그대로 전달된다. 따라서 내부 시스템 정보(예: 서버 경로, 데이터베이스 비밀번호)가 에러 메시지에 포함되지 않도록 주의해야 한다.</p>
+      </div>
+    </section>
+
+    <!-- 5. Context 활용 -->
+    <section>
+      <h2>Context 활용</h2>
+      <p>
+        <strong>Context</strong> 객체는 도구 실행 중에 서버와 클라이언트 간의 상호작용을 가능하게 한다.
+        진행률 보고, 로깅, 리소스 접근 등의 기능을 제공한다.
+      </p>
+      <p>
+        Context를 사용하려면 파라미터에 <code>ctx: Context</code>를 추가하면 된다.
+        이 파라미터는 LLM에게 노출되지 않으며, SDK가 자동으로 주입한다.
+      </p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python">from mcp.server.fastmcp import FastMCP, Context
+
+mcp = FastMCP("Context Demo Server")
+
+@mcp.tool()
+async def long_task(ctx: Context, items: list[str]) -> str:
+    """오래 걸리는 작업을 수행한다
+
+    Args:
+        items: 처리할 항목 목록
+    """
+    total = len(items)
+
+    for i, item in enumerate(items):
+        # 로그 메시지 전송 (클라이언트에 표시)
+        await ctx.info(f"처리 중: {item}")
+
+        # 진행률 보고 (현재/전체)
+        await ctx.report_progress(i + 1, total)
+
+        # 실제 처리 로직 (여기서는 시뮬레이션)
+        await asyncio.sleep(0.5)
+
+    return f"완료: {total}개 항목 처리됨"</code></pre>
+      </div>
+
+      <h3>Context가 제공하는 주요 기능</h3>
+
+      <table>
+        <thead>
+          <tr>
+            <th>메서드</th>
+            <th>설명</th>
+            <th>사용 예시</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>ctx.info(message)</code></td>
+            <td>정보 수준 로그를 전송한다</td>
+            <td><code>await ctx.info("작업 시작")</code></td>
+          </tr>
+          <tr>
+            <td><code>ctx.debug(message)</code></td>
+            <td>디버그 수준 로그를 전송한다</td>
+            <td><code>await ctx.debug("상세 정보")</code></td>
+          </tr>
+          <tr>
+            <td><code>ctx.warning(message)</code></td>
+            <td>경고 수준 로그를 전송한다</td>
+            <td><code>await ctx.warning("주의 필요")</code></td>
+          </tr>
+          <tr>
+            <td><code>ctx.error(message)</code></td>
+            <td>에러 수준 로그를 전송한다</td>
+            <td><code>await ctx.error("오류 발생")</code></td>
+          </tr>
+          <tr>
+            <td><code>ctx.report_progress(current, total)</code></td>
+            <td>진행률을 보고한다</td>
+            <td><code>await ctx.report_progress(5, 10)</code></td>
+          </tr>
+          <tr>
+            <td><code>ctx.read_resource(uri)</code></td>
+            <td>서버의 리소스를 읽는다</td>
+            <td><code>await ctx.read_resource("config://app")</code></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box info-box--tip">
+        <div class="info-box__title">TIP</div>
+        <p><code>ctx: Context</code> 파라미터는 도구의 입력 스키마에 포함되지 않는다. LLM은 이 파라미터의 존재를 알지 못하며, SDK가 내부적으로 자동 주입한다. 따라서 docstring의 Args에도 포함시키지 않아도 된다.</p>
+      </div>
+    </section>
+
+    <!-- 6. 실전 예제: 파일 관리 도구 -->
+    <section>
+      <h2>실전 예제: 파일 관리 도구</h2>
+      <p>
+        지금까지 배운 내용을 종합하여 실전에서 사용할 수 있는 파일 관리 MCP 서버를 만들어보자.
+        이 서버는 파일 목록 조회, 파일 읽기, 파일 검색 기능을 제공한다.
+      </p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python">import os
+import glob
+from datetime import datetime
+from mcp.server.fastmcp import FastMCP, Context
+
+mcp = FastMCP("File Manager")
+
+# 허용된 디렉토리 (보안을 위해 접근 가능한 경로를 제한한다)
+ALLOWED_DIRS = [
+    os.path.expanduser("~/documents"),
+    os.path.expanduser("~/projects"),
+]
+
+
+def _is_path_allowed(path: str) -> bool:
+    """주어진 경로가 허용된 디렉토리 내에 있는지 확인한다"""
+    abs_path = os.path.abspath(path)
+    return any(abs_path.startswith(d) for d in ALLOWED_DIRS)
+
+
+@mcp.tool()
+async def list_files(
+    ctx: Context,
+    directory: str,
+    show_hidden: bool = False
+) -> list[dict]:
+    """디렉토리의 파일 목록을 반환한다
+
+    Args:
+        directory: 파일 목록을 조회할 디렉토리 경로
+        show_hidden: 숨김 파일 포함 여부 (기본값: False)
+    """
+    if not _is_path_allowed(directory):
+        raise PermissionError(f"접근이 허용되지 않은 디렉토리이다: {directory}")
+
+    if not os.path.isdir(directory):
+        raise FileNotFoundError(f"디렉토리를 찾을 수 없다: {directory}")
+
+    await ctx.info(f"디렉토리 조회 중: {directory}")
+
+    entries = []
+    for name in sorted(os.listdir(directory)):
+        # 숨김 파일 필터링
+        if not show_hidden and name.startswith("."):
+            continue
+
+        full_path = os.path.join(directory, name)
+        stat = os.stat(full_path)
+
+        entries.append({
+            "name": name,
+            "type": "directory" if os.path.isdir(full_path) else "file",
+            "size": stat.st_size,
+            "modified": datetime.fromtimestamp(stat.st_mtime).isoformat()
+        })
+
+    await ctx.info(f"총 {len(entries)}개 항목 발견")
+    return entries
+
+
+@mcp.tool()
+async def read_text_file(
+    ctx: Context,
+    file_path: str,
+    max_lines: int = 100
+) -> str:
+    """텍스트 파일의 내용을 읽어 반환한다
+
+    Args:
+        file_path: 읽을 파일의 경로
+        max_lines: 최대 읽을 줄 수 (기본값: 100)
+    """
+    if not _is_path_allowed(file_path):
+        raise PermissionError(f"접근이 허용되지 않은 경로이다: {file_path}")
+
+    if not os.path.isfile(file_path):
+        raise FileNotFoundError(f"파일을 찾을 수 없다: {file_path}")
+
+    # 파일 크기 확인
+    file_size = os.path.getsize(file_path)
+    await ctx.info(f"파일 크기: {file_size:,} bytes")
+
+    if file_size > 5 * 1024 * 1024:  # 5MB 제한
+        raise ValueError("파일이 너무 크다 (최대 5MB)")
+
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            lines = []
+            for i, line in enumerate(f):
+                if i >= max_lines:
+                    lines.append(f"\n... ({max_lines}줄까지만 표시)")
+                    break
+                lines.append(line)
+            return "".join(lines)
+    except UnicodeDecodeError:
+        raise ValueError("텍스트 파일이 아니거나 인코딩을 읽을 수 없다")
+
+
+@mcp.tool()
+async def search_in_files(
+    ctx: Context,
+    directory: str,
+    keyword: str,
+    file_pattern: str = "*.py"
+) -> list[dict]:
+    """디렉토리 내 파일들에서 키워드를 검색한다
+
+    Args:
+        directory: 검색할 디렉토리 경로
+        keyword: 검색할 키워드
+        file_pattern: 검색 대상 파일 패턴 (기본값: "*.py")
+    """
+    if not _is_path_allowed(directory):
+        raise PermissionError(f"접근이 허용되지 않은 디렉토리이다: {directory}")
+
+    if not os.path.isdir(directory):
+        raise FileNotFoundError(f"디렉토리를 찾을 수 없다: {directory}")
+
+    await ctx.info(f"'{keyword}' 검색 중 ({file_pattern})")
+
+    # 검색 대상 파일 목록 구하기
+    search_path = os.path.join(directory, "**", file_pattern)
+    files = glob.glob(search_path, recursive=True)
+
+    await ctx.info(f"검색 대상 파일: {len(files)}개")
+
+    results = []
+    for i, file_path in enumerate(files):
+        # 진행률 보고
+        await ctx.report_progress(i + 1, len(files))
+
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                for line_no, line in enumerate(f, 1):
+                    if keyword.lower() in line.lower():
+                        results.append({
+                            "file": file_path,
+                            "line": line_no,
+                            "content": line.strip()
+                        })
+        except (UnicodeDecodeError, PermissionError):
+            # 읽을 수 없는 파일은 건너뛴다
+            continue
+
+        # 결과가 너무 많으면 중단
+        if len(results) >= 50:
+            await ctx.warning("검색 결과가 50개를 초과하여 중단한다")
+            break
+
+    await ctx.info(f"검색 완료: {len(results)}개 결과 발견")
+    return results
+
+
+if __name__ == "__main__":
+    mcp.run()</code></pre>
+      </div>
+
+      <p>이 서버의 핵심 설계 포인트:</p>
+      <ul>
+        <li><strong>보안:</strong> <code>ALLOWED_DIRS</code>로 접근 가능한 디렉토리를 제한한다.</li>
+        <li><strong>에러 처리:</strong> 파일 미존재, 권한 부족, 크기 초과 등을 명확한 메시지로 처리한다.</li>
+        <li><strong>Context 활용:</strong> 진행률 보고와 로깅으로 사용자에게 작업 상태를 알린다.</li>
+        <li><strong>제한 설정:</strong> 파일 크기(5MB), 최대 줄 수(100줄), 검색 결과 수(50개)를 제한하여 과도한 리소스 사용을 방지한다.</li>
+      </ul>
+
+      <div class="info-box info-box--warning">
+        <div class="info-box__title">WARNING</div>
+        <p>실제 프로덕션 환경에서는 <code>ALLOWED_DIRS</code>를 환경 변수나 설정 파일로 관리하고, 경로 순회 공격(path traversal) 방어를 더 강화해야 한다. 위 코드는 학습 목적의 예제이다.</p>
+      </div>
+    </section>
+
+    <!-- 다음 챕터 안내 -->
+    <section>
+      <h2>다음 단계</h2>
+      <p>
+        Tools의 다양한 기능과 패턴을 살펴보았다.
+        다음 챕터에서는 Resources를 심도 있게 다루며,
+        정적 리소스, 동적 리소스 템플릿, 다양한 데이터 타입 반환 등을 배울 것이다.
+      </p>
+    </section>
+
+    <nav class="page-nav"></nav>
+  </main>
+</div>
+
+<script src="../js/nav.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.js"></script>
+</body>
+</html>

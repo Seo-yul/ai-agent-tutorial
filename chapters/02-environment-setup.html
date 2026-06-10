@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>환경 설정 - MCP Python SDK 튜토리얼</title>
+  <link rel="stylesheet" href="../css/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.css">
+</head>
+<body>
+
+<header class="site-header">
+  <button class="hamburger" aria-label="메뉴">
+    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+  </button>
+  <a href="../index.html" class="site-header__title"><span>MCP</span> Python SDK 튜토리얼</a>
+  <span class="site-header__badge">v1.12.x</span>
+</header>
+
+<div class="layout">
+  <nav class="sidebar"></nav>
+  <main class="main">
+    <span class="chapter-badge chapter-badge--basic">기본 과정</span>
+    <h1>환경 설정</h1>
+    <p class="chapter-subtitle">MCP 개발을 위한 Python 환경을 구성한다</p>
+
+    <!-- 1. 사전 요구사항 -->
+    <section>
+      <h2>사전 요구사항</h2>
+      <p>MCP Python SDK를 사용하려면 <strong>Python 3.10 이상</strong>이 필요하다. 터미널에서 현재 설치된 Python 버전을 확인하자.</p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-bash">python3 --version
+# 출력 예시: Python 3.12.4</code></pre>
+      </div>
+
+      <p>Python 3.10 미만이 설치되어 있다면, <a href="https://www.python.org/downloads/" target="_blank">python.org</a>에서 최신 버전을 다운로드하거나, 아래 uv를 설치한 후 uv를 통해 Python을 관리할 수도 있다.</p>
+
+      <div class="info-box info-box--info">
+        <div class="info-box__title">INFO</div>
+        <p>macOS 사용자는 <code>brew install python</code>, Ubuntu 사용자는 <code>sudo apt install python3</code>으로도 설치할 수 있다.</p>
+      </div>
+    </section>
+
+    <!-- 2. uv 설치 -->
+    <section>
+      <h2>uv 설치</h2>
+      <p>
+        <strong>uv</strong>는 Rust로 작성된 고속 Python 패키지 매니저이자 프로젝트 관리 도구이다.
+        pip보다 10~100배 빠르며, 프로젝트별 가상 환경을 자동으로 관리해준다.
+        MCP 공식 문서에서도 uv를 권장하고 있다.
+      </p>
+
+      <h3>설치 명령어</h3>
+
+      <p><strong>macOS / Linux:</strong></p>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-bash"># uv 설치 (공식 설치 스크립트)
+curl -LsSf https://astral.sh/uv/install.sh | sh</code></pre>
+      </div>
+
+      <p><strong>Windows (PowerShell):</strong></p>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-bash"># Windows용 uv 설치
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"</code></pre>
+      </div>
+
+      <p>설치가 완료되면 터미널을 재시작하고 버전을 확인한다.</p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-bash">uv --version
+# 출력 예시: uv 0.5.x</code></pre>
+      </div>
+
+      <div class="info-box info-box--tip">
+        <div class="info-box__title">TIP</div>
+        <p>uv를 사용하면 <code>pip install</code>, <code>python -m venv</code>, <code>pip freeze</code> 등의 작업을 모두 하나의 도구로 처리할 수 있다. 가상 환경 생성과 패키지 설치를 자동으로 해주기 때문에, 직접 <code>venv</code>를 관리할 필요가 없다.</p>
+      </div>
+    </section>
+
+    <!-- 3. 프로젝트 초기화 -->
+    <section>
+      <h2>프로젝트 초기화</h2>
+      <p>uv를 사용하여 새 프로젝트를 만들고 MCP SDK를 설치한다.</p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-bash"># 새 프로젝트 생성
+uv init mcp-demo
+
+# 프로젝트 디렉토리로 이동
+cd mcp-demo
+
+# MCP Python SDK 설치
+uv add mcp</code></pre>
+      </div>
+
+      <p><code>uv init</code>은 프로젝트 디렉토리를 생성하고 기본 설정 파일(<code>pyproject.toml</code>)을 만든다. <code>uv add mcp</code>는 MCP SDK를 의존성에 추가하고 자동으로 설치한다.</p>
+
+      <div class="info-box info-box--tip">
+        <div class="info-box__title">TIP</div>
+        <p>HTTP 기반 도구를 만들 계획이라면 <code>uv add mcp httpx</code>로 HTTP 클라이언트 라이브러리도 함께 설치하는 것을 권장한다.</p>
+      </div>
+    </section>
+
+    <!-- 4. 프로젝트 구조 -->
+    <section>
+      <h2>프로젝트 구조</h2>
+      <p>위 명령어를 실행하면 다음과 같은 디렉토리 구조가 생성된다.</p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-bash">mcp-demo/
+├── .python-version     # Python 버전 지정
+├── .venv/              # 가상 환경 (uv가 자동 생성)
+├── pyproject.toml      # 프로젝트 설정 및 의존성
+├── README.md           # 프로젝트 설명
+└── main.py             # 기본 Python 파일</code></pre>
+      </div>
+
+      <p>각 파일의 역할을 살펴보자:</p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>파일/디렉토리</th>
+            <th>설명</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>.python-version</code></td>
+            <td>프로젝트에서 사용할 Python 버전을 명시한다.</td>
+          </tr>
+          <tr>
+            <td><code>.venv/</code></td>
+            <td>uv가 자동으로 생성하는 가상 환경이다. 직접 관리할 필요 없다.</td>
+          </tr>
+          <tr>
+            <td><code>pyproject.toml</code></td>
+            <td>프로젝트 메타데이터와 의존성을 정의한다. <code>uv add</code>로 패키지를 추가하면 이 파일이 업데이트된다.</td>
+          </tr>
+          <tr>
+            <td><code>main.py</code></td>
+            <td>기본 엔트리 포인트이다. 이 파일에 MCP 서버 코드를 작성하거나, 별도의 <code>server.py</code>를 생성할 수 있다.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <p><code>pyproject.toml</code> 파일을 열어보면 다음과 같은 내용이 포함되어 있다:</p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python">[project]
+name = "mcp-demo"
+version = "0.1.0"
+description = ""
+requires-python = ">=3.10"
+dependencies = [
+    "mcp",
+]</code></pre>
+      </div>
+    </section>
+
+    <!-- 5. 설치 확인 -->
+    <section>
+      <h2>설치 확인</h2>
+      <p>MCP SDK가 정상적으로 설치되었는지 확인하자. <code>main.py</code> 파일에 다음 코드를 작성한다.</p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python">from mcp.server.fastmcp import FastMCP
+
+# FastMCP 임포트에 성공하면 SDK가 올바르게 설치된 것이다
+print("MCP SDK 설치 완료!")
+
+# SDK 버전 확인
+import mcp
+print(f"MCP 버전: {mcp.__version__}")</code></pre>
+      </div>
+
+      <p>uv로 실행해본다:</p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-bash">uv run main.py
+# 출력:
+# MCP SDK 설치 완료!
+# MCP 버전: 1.12.x</code></pre>
+      </div>
+
+      <p>위와 같이 에러 없이 출력되면 환경 설정이 완료된 것이다.</p>
+
+      <div class="info-box info-box--warning">
+        <div class="info-box__title">WARNING</div>
+        <p><code>ModuleNotFoundError</code>가 발생한다면, <code>uv add mcp</code>를 다시 실행하고 <code>uv run</code>으로 실행하고 있는지 확인하자. <code>python main.py</code>가 아닌 <code>uv run main.py</code>를 사용해야 uv의 가상 환경에서 실행된다.</p>
+      </div>
+    </section>
+
+    <!-- 다음 챕터 안내 -->
+    <section>
+      <h2>다음 단계</h2>
+      <p>
+        개발 환경이 준비되었다. 다음 챕터에서는 FastMCP를 사용하여 첫 번째 MCP 서버를 만들어본다.
+        도구(Tool)를 하나 등록하고 실제로 동작하는 것을 확인할 것이다.
+      </p>
+    </section>
+
+    <nav class="page-nav"></nav>
+  </main>
+</div>
+
+<script src="../js/nav.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.js"></script>
+</body>
+</html>

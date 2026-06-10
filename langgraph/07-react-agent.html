@@ -1,0 +1,805 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ReAct 에이전트 - AI Agent 개발 튜토리얼</title>
+  <link rel="stylesheet" href="../css/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.css">
+</head>
+<body>
+
+<header class="site-header">
+  <button class="hamburger" aria-label="메뉴">
+    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+  </button>
+  <a href="../index.html" class="site-header__title"><span>AI Agent</span> 개발 튜토리얼</a>
+</header>
+
+<div class="layout">
+  <nav class="sidebar"></nav>
+  <main class="main">
+    <span class="chapter-badge chapter-badge--lg-basic">기본 과정</span>
+    <h1>ReAct 에이전트</h1>
+    <p class="chapter-subtitle">사전 구축된 ReAct 에이전트로 빠르게 시작한다</p>
+
+    <!-- 1. ReAct 패턴이란? -->
+    <section>
+      <h2>ReAct 패턴이란?</h2>
+      <p>
+        <strong>ReAct</strong>는 <strong>Re</strong>asoning + <strong>Act</strong>ing의 합성어이다.
+        2022년 Yao et al.이 제안한 이 패턴은 LLM이
+        <strong>"생각(Reason)하고 → 행동(Act)하고 → 관찰(Observe)하는"</strong> 과정을
+        반복하여 복잡한 문제를 해결하는 방법이다.
+      </p>
+
+      <div class="diagram">
+┌────────────────────────────────────────────────────┐
+│                  ReAct 루프                        │
+│                                                    │
+│   ┌──────────┐    ┌──────────┐    ┌────────────┐  │
+│   │ Thought  │ →  │  Action  │ →  │Observation │  │
+│   │ (생각)   │    │  (행동)  │    │  (관찰)    │  │
+│   └──────────┘    └──────────┘    └─────┬──────┘  │
+│        ▲                                │         │
+│        └────────────────────────────────┘         │
+│                                                    │
+│   반복: 충분한 정보를 얻을 때까지 계속한다         │
+└────────────────────────────────────────────────────┘
+      </div>
+
+      <p>구체적인 사고 과정의 예를 보자:</p>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-bash"># ReAct 패턴의 사고 과정 예시
+
+질문: "서울과 부산 중 어디가 더 덥고, 온도 차이는?"
+
+[Thought 1] 두 도시의 온도를 비교해야 한다. 먼저 서울의 날씨를 조회하자.
+[Action 1]  search("서울 현재 기온")
+[Observe 1] 서울의 현재 기온은 25°C이다.
+
+[Thought 2] 서울은 25°C이다. 이제 부산의 기온을 조회하자.
+[Action 2]  search("부산 현재 기온")
+[Observe 2] 부산의 현재 기온은 28°C이다.
+
+[Thought 3] 서울 25°C, 부산 28°C이므로 부산이 3°C 더 덥다.
+            계산기로 확인하자.
+[Action 3]  calculate("28 - 25")
+[Observe 3] 3
+
+[Thought 4] 충분한 정보를 얻었다. 최종 답변을 작성하자.
+[Answer]    부산(28°C)이 서울(25°C)보다 3°C 더 덥다.</code></pre>
+      </div>
+
+      <p>
+        ReAct 패턴이 강력한 이유는 LLM이 <strong>단계별로 추론</strong>하면서
+        필요한 정보를 도구로 수집하기 때문이다.
+        한 번에 모든 것을 판단하는 대신, <strong>점진적으로 정보를 쌓아가며</strong> 정확한 답변을 만든다.
+      </p>
+
+      <div class="info-box info-box--tip">
+        <div class="info-box__title">TIP</div>
+        <p>
+          ReAct 패턴은 가장 널리 사용되는 에이전트 아키텍처이다.
+          LangGraph의 <code>create_react_agent</code>를 사용하면
+          이 복잡한 패턴을 <strong>단 몇 줄의 코드</strong>로 구현할 수 있다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 2. create_react_agent -->
+    <section>
+      <h2>create_react_agent</h2>
+      <p>
+        LangGraph는 ReAct 패턴을 사전 구축한 <code>create_react_agent</code> 함수를 제공한다.
+        LLM과 도구 목록만 전달하면, 자동으로 ReAct 그래프가 만들어진다.
+      </p>
+
+      <h3>기본 사용법</h3>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python">from langchain_anthropic import ChatAnthropic
+from langgraph.prebuilt import create_react_agent
+
+
+# 1. LLM 초기화
+model = ChatAnthropic(model="claude-sonnet-4-20250514")
+
+
+# 2. 도구 정의 — @tool 없이 일반 함수로도 가능
+def search(query: str) -> str:
+    """웹에서 정보를 검색한다."""
+    if "서울" in query and "기온" in query:
+        return "서울의 현재 기온은 25°C이다."
+    if "부산" in query and "기온" in query:
+        return "부산의 현재 기온은 28°C이다."
+    if "서울" in query:
+        return "서울은 대한민국의 수도이다. 인구는 약 950만 명이다."
+    return "검색 결과를 찾을 수 없다."
+
+
+def calculator(expression: str) -> str:
+    """수학 계산을 수행한다."""
+    try:
+        return str(eval(expression, {"__builtins__": {}}))
+    except Exception as e:
+        return f"계산 오류: {e}"
+
+
+# 3. ReAct 에이전트 생성 — 이것이 전부이다!
+agent = create_react_agent(model, [search, calculator])
+
+
+# 4. 실행
+result = agent.invoke({
+    "messages": [{"role": "user", "content": "서울 날씨 알려줘"}]
+})
+
+# 마지막 메시지가 최종 답변
+print(result["messages"][-1].content)</code></pre>
+      </div>
+
+      <div class="info-box info-box--tip">
+        <div class="info-box__title">TIP</div>
+        <p>
+          <code>create_react_agent</code>에 전달하는 도구 함수는
+          <code>@tool</code> 데코레이터 없이도 작동한다.
+          단, docstring은 반드시 작성해야 한다. LLM이 도구의 용도를 판단하는 데 사용한다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 3. ReAct 내부 구조 -->
+    <section>
+      <h2>ReAct 내부 구조</h2>
+      <p>
+        <code>create_react_agent</code>가 내부적으로 만드는 그래프는
+        이전 챕터(Tool 통합)에서 직접 구축한 구조와 동일하다.
+      </p>
+
+      <div class="diagram">
+┌───────┐
+│ START │
+└───┬───┘
+    ▼
+┌─────────┐  tool_calls 있음   ┌─────────┐
+│  agent  │ ─────────────────→ │  tools  │
+│  (LLM)  │ ←───────────────── │(ToolNode)│
+└────┬────┘  도구 결과 반환     └─────────┘
+     │
+     │ tool_calls 없음
+     ▼
+┌─────┐
+│ END │
+└─────┘
+      </div>
+
+      <p>
+        내부적으로 다음 세 가지 컴포넌트가 자동으로 구성된다:
+      </p>
+      <ul>
+        <li><strong>agent 노드</strong>: 도구가 바인딩된 LLM을 호출한다. 사용자 메시지와 이전 도구 결과를 보고, 도구를 호출할지 직접 답변할지를 결정한다.</li>
+        <li><strong>tools 노드</strong>: <code>ToolNode</code>가 LLM의 도구 호출 요청을 실제로 실행한다.</li>
+        <li><strong>조건부 라우팅</strong>: LLM 응답에 <code>tool_calls</code>가 있으면 tools 노드로, 없으면 END로 보낸다.</li>
+      </ul>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python"># create_react_agent가 내부적으로 하는 일을 펼쳐보면:
+from langgraph.graph import StateGraph, MessagesState, START, END
+from langgraph.prebuilt import ToolNode
+
+model_with_tools = model.bind_tools([search, calculator])
+
+def call_model(state: MessagesState):
+    response = model_with_tools.invoke(state["messages"])
+    return {"messages": [response]}
+
+def should_continue(state: MessagesState):
+    last_message = state["messages"][-1]
+    if last_message.tool_calls:
+        return "tools"
+    return END
+
+graph = StateGraph(MessagesState)
+graph.add_node("agent", call_model)
+graph.add_node("tools", ToolNode([search, calculator]))
+graph.add_edge(START, "agent")
+graph.add_conditional_edges("agent", should_continue, {"tools": "tools", END: END})
+graph.add_edge("tools", "agent")
+app = graph.compile()
+
+# 위 코드 전체가 아래 한 줄과 같다:
+# agent = create_react_agent(model, [search, calculator])</code></pre>
+      </div>
+    </section>
+
+    <!-- 4. 결과 처리 -->
+    <section>
+      <h2>결과 처리</h2>
+      <p>
+        <code>invoke</code> 결과에서 메시지를 추출하여 에이전트의 사고 과정을 확인할 수 있다.
+      </p>
+
+      <h3>메시지 순회</h3>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python">result = agent.invoke({
+    "messages": [{"role": "user", "content": "서울과 부산 중 어디가 더 더워?"}]
+})
+
+# 전체 메시지 흐름 출력
+for msg in result["messages"]:
+    msg_type = msg.type.upper()
+
+    if msg.type == "human":
+        print(f"[{msg_type}] {msg.content}")
+
+    elif msg.type == "ai":
+        if msg.tool_calls:
+            for tc in msg.tool_calls:
+                print(f"[{msg_type} → TOOL] {tc['name']}({tc['args']})")
+        if msg.content:
+            content = msg.content if isinstance(msg.content, str) else str(msg.content)
+            if content.strip():
+                print(f"[{msg_type}] {content}")
+
+    elif msg.type == "tool":
+        print(f"[{msg_type}] {msg.content}")
+
+    print()  # 빈 줄</code></pre>
+      </div>
+
+      <h3>실행 결과 예시</h3>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-bash">[HUMAN] 서울과 부산 중 어디가 더 더워?
+
+[AI → TOOL] search({'query': '서울 현재 기온'})
+
+[TOOL] 서울의 현재 기온은 25°C이다.
+
+[AI → TOOL] search({'query': '부산 현재 기온'})
+
+[TOOL] 부산의 현재 기온은 28°C이다.
+
+[AI] 현재 부산(28°C)이 서울(25°C)보다 3°C 더 덥다.</code></pre>
+      </div>
+
+      <h3>최종 답변만 추출</h3>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python"># 간단하게 최종 답변만 얻기
+final_answer = result["messages"][-1].content
+print(final_answer)
+# "현재 부산(28°C)이 서울(25°C)보다 3°C 더 덥다."</code></pre>
+      </div>
+    </section>
+
+    <!-- 5. 시스템 프롬프트 설정 -->
+    <section>
+      <h2>시스템 프롬프트 설정</h2>
+      <p>
+        시스템 프롬프트를 설정하면 에이전트의 역할, 성격, 행동 규칙을 정의할 수 있다.
+        <code>create_react_agent</code>의 <code>prompt</code> 파라미터를 사용한다.
+      </p>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python">from langgraph.prebuilt import create_react_agent
+from langchain_anthropic import ChatAnthropic
+
+model = ChatAnthropic(model="claude-sonnet-4-20250514")
+
+# 시스템 프롬프트로 에이전트의 역할 정의
+agent = create_react_agent(
+    model,
+    tools=[search, calculator],
+    prompt=(
+        "당신은 한국어로 답변하는 유용한 AI 어시스턴트이다. "
+        "정확한 정보를 제공하기 위해 도구를 적극 활용한다. "
+        "답변은 간결하고 핵심만 전달한다. "
+        "확실하지 않은 정보는 반드시 도구로 확인한 후 답변한다."
+    )
+)</code></pre>
+      </div>
+
+      <h3>역할별 시스템 프롬프트 예시</h3>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python"># 데이터 분석가 역할
+data_analyst_prompt = """당신은 데이터 분석 전문가이다.
+숫자와 통계에 대한 질문에 답변한다.
+계산이 필요한 경우 반드시 calculator 도구를 사용하여 정확한 값을 제공한다.
+결과를 설명할 때는 비율, 증감률 등 핵심 지표를 함께 제시한다."""
+
+# 리서치 어시스턴트 역할
+researcher_prompt = """당신은 리서치 어시스턴트이다.
+사용자의 질문에 대해 체계적으로 조사하고 답변한다.
+여러 소스를 검색하여 정보를 교차 검증한다.
+출처를 명시하고, 확인되지 않은 정보는 그 사실을 밝힌다."""
+
+# 수학 튜터 역할
+math_tutor_prompt = """당신은 수학 튜터이다.
+학생이 수학 문제를 이해할 수 있도록 단계별로 풀이를 설명한다.
+계산은 calculator 도구로 정확하게 수행하고,
+각 단계의 의미를 쉽게 설명한다."""</code></pre>
+      </div>
+
+      <div class="info-box info-box--tip">
+        <div class="info-box__title">TIP</div>
+        <p>
+          좋은 시스템 프롬프트는 에이전트의 행동을 크게 개선한다.
+          <strong>역할, 도구 사용 규칙, 답변 형식, 제약 사항</strong>을 명확하게 기술하면
+          LLM이 더 일관되고 정확한 답변을 생성한다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 6. 도구 여러 개 조합 -->
+    <section>
+      <h2>도구 여러 개 조합</h2>
+      <p>
+        ReAct 에이전트의 진정한 힘은 <strong>여러 도구를 조합</strong>하여
+        복합적인 질문에 답변할 수 있다는 점이다.
+      </p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python">from langchain_anthropic import ChatAnthropic
+from langchain_core.tools import tool
+from langgraph.prebuilt import create_react_agent
+from datetime import datetime
+
+
+# ─── 다양한 도구 정의 ───
+@tool
+def search(query: str) -> str:
+    """웹에서 정보를 검색한다. 최신 뉴스, 사실 확인 등에 사용한다."""
+    knowledge = {
+        "대한민국 인구": "대한민국의 인구는 약 5,150만 명이다 (2024년 기준).",
+        "서울 인구": "서울의 인구는 약 950만 명이다.",
+        "한국 GDP": "한국의 2024년 GDP는 약 1조 7천억 달러이다.",
+        "파이썬": "Python은 1991년 귀도 반 로섬이 만든 프로그래밍 언어이다.",
+        "랭그래프": "LangGraph는 LangChain 팀이 만든 에이전트 프레임워크이다.",
+    }
+
+    for key, value in knowledge.items():
+        if any(word in query for word in key.split()):
+            return value
+
+    return f"'{query}'에 대한 정보를 찾을 수 없다."
+
+
+@tool
+def calculator(expression: str) -> str:
+    """수학 계산을 수행한다. 사칙연산, 거듭제곱, 나머지 등을 지원한다."""
+    try:
+        result = eval(expression, {"__builtins__": {}})
+        return f"{expression} = {result}"
+    except Exception as e:
+        return f"계산 오류: {e}"
+
+
+@tool
+def get_current_datetime() -> str:
+    """현재 날짜와 시간을 반환한다."""
+    now = datetime.now()
+    weekday_kr = ["월", "화", "수", "목", "금", "토", "일"]
+    weekday = weekday_kr[now.weekday()]
+    return f"현재: {now.strftime('%Y년 %m월 %d일')} ({weekday}요일) {now.strftime('%H시 %M분')}"
+
+
+@tool
+def unit_converter(value: float, from_unit: str, to_unit: str) -> str:
+    """단위를 변환한다. 지원: km/mile, kg/lb, celsius/fahrenheit
+
+    Args:
+        value: 변환할 값
+        from_unit: 원래 단위
+        to_unit: 변환할 단위
+    """
+    conversions = {
+        ("km", "mile"): lambda v: v * 0.621371,
+        ("mile", "km"): lambda v: v * 1.60934,
+        ("kg", "lb"): lambda v: v * 2.20462,
+        ("lb", "kg"): lambda v: v * 0.453592,
+        ("celsius", "fahrenheit"): lambda v: v * 9/5 + 32,
+        ("fahrenheit", "celsius"): lambda v: (v - 32) * 5/9,
+    }
+
+    key = (from_unit.lower(), to_unit.lower())
+    if key in conversions:
+        result = conversions[key](value)
+        return f"{value} {from_unit} = {round(result, 2)} {to_unit}"
+
+    return f"지원하지 않는 변환: {from_unit} → {to_unit}"
+
+
+# ─── 에이전트 생성 ───
+model = ChatAnthropic(model="claude-sonnet-4-20250514")
+
+agent = create_react_agent(
+    model,
+    tools=[search, calculator, get_current_datetime, unit_converter],
+    prompt=(
+        "당신은 다재다능한 AI 어시스턴트이다. "
+        "사용자의 질문에 정확하게 답변하기 위해 "
+        "사용 가능한 모든 도구를 적극 활용한다. "
+        "한국어로 답변하며, 결과는 명확하고 읽기 쉽게 구성한다."
+    )
+)</code></pre>
+      </div>
+
+      <h3>복합 질문 테스트</h3>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python"># 여러 도구를 조합해야 하는 질문
+result = agent.invoke({
+    "messages": [{"role": "user", "content":
+        "한국 인구가 몇 명이고, 서울에 인구의 몇 퍼센트가 살아?"
+    }]
+})
+
+# 에이전트의 사고 과정:
+# 1. search("대한민국 인구") → 5,150만 명
+# 2. search("서울 인구") → 950만 명
+# 3. calculator("950 / 5150 * 100") → 18.45%
+# 4. 최종 답변 조합
+
+for msg in result["messages"]:
+    if msg.type == "ai" and msg.content:
+        content = msg.content if isinstance(msg.content, str) else str(msg.content)
+        if content.strip():
+            print(f"[답변] {content}")
+    elif msg.type == "ai" and msg.tool_calls:
+        for tc in msg.tool_calls:
+            print(f"[도구] {tc['name']}({tc['args']})")
+    elif msg.type == "tool":
+        print(f"[결과] {msg.content}")</code></pre>
+      </div>
+
+      <div class="info-box info-box--tip">
+        <div class="info-box__title">TIP</div>
+        <p>
+          에이전트는 하나의 질문에 대해 <strong>여러 턴에 걸쳐 여러 도구를 호출</strong>할 수 있다.
+          위 예시에서는 검색 2번, 계산 1번, 총 3번의 도구 호출이 이루어졌다.
+          이 모든 과정이 <code>create_react_agent</code>에 의해 자동으로 관리된다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 7. create_react_agent vs 직접 구축 -->
+    <section>
+      <h2>create_react_agent vs 직접 구축</h2>
+      <p>
+        언제 <code>create_react_agent</code>를 사용하고, 언제 직접 그래프를 구축해야 할까?
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>항목</th>
+            <th>create_react_agent</th>
+            <th>직접 구축</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>개발 속도</td>
+            <td>빠름 (한 줄)</td>
+            <td>느림 (노드, 엣지 직접 정의)</td>
+          </tr>
+          <tr>
+            <td>커스터마이징</td>
+            <td>제한적 (프롬프트, 도구 수준)</td>
+            <td>자유로움 (노드 로직 완전 제어)</td>
+          </tr>
+          <tr>
+            <td>복잡한 워크플로우</td>
+            <td>부적합 (단일 ReAct 루프)</td>
+            <td>적합 (다중 경로, 서브그래프)</td>
+          </tr>
+          <tr>
+            <td>학습 곡선</td>
+            <td>낮음</td>
+            <td>높음</td>
+          </tr>
+          <tr>
+            <td>디버깅</td>
+            <td>내부 로직 파악 어려움</td>
+            <td>각 노드를 개별 디버깅 가능</td>
+          </tr>
+          <tr>
+            <td>적합한 경우</td>
+            <td>표준 ReAct, 프로토타이핑, 단순 에이전트</td>
+            <td>복잡한 워크플로우, 멀티 에이전트, 커스텀 라우팅</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box info-box--tip">
+        <div class="info-box__title">TIP</div>
+        <p>
+          <strong>추천 접근 방식:</strong>
+          처음에는 <code>create_react_agent</code>로 빠르게 프로토타입을 만들고,
+          기능이 부족하다고 느낄 때 직접 구축 방식으로 전환한다.
+          <code>create_react_agent</code>의 내부 구조를 이해하고 있으면
+          전환이 매우 수월하다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 8. 실전 예제: 리서치 에이전트 -->
+    <section>
+      <h2>실전 예제: 리서치 에이전트</h2>
+      <p>
+        검색, 계산, 현재 시간 조회 도구를 갖추고,
+        사용자의 질문에 <strong>단계적으로 추론하며 답변하는</strong> 리서치 에이전트를 완성한다.
+      </p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python">from langchain_anthropic import ChatAnthropic
+from langchain_core.tools import tool
+from langchain_core.messages import HumanMessage
+from langgraph.prebuilt import create_react_agent
+from datetime import datetime
+
+
+# ─── 도구 정의 ───
+@tool
+def web_search(query: str) -> str:
+    """웹에서 최신 정보를 검색한다. 사실 확인, 통계 데이터, 뉴스 등을 조회할 수 있다.
+
+    Args:
+        query: 검색할 키워드 또는 질문
+    """
+    # 시뮬레이션용 지식 베이스
+    knowledge_base = {
+        "python 3.13": (
+            "Python 3.13이 2024년 10월에 출시되었다. "
+            "주요 기능: free-threaded 모드 (실험적), "
+            "JIT 컴파일러 (실험적), 개선된 에러 메시지, "
+            "새로운 REPL 등이 포함되었다."
+        ),
+        "langgraph": (
+            "LangGraph는 LangChain 팀이 개발한 프레임워크로, "
+            "LLM을 활용한 상태 기반 에이전트 워크플로우를 구축한다. "
+            "그래프 구조로 복잡한 에이전트 로직을 표현할 수 있다."
+        ),
+        "한국 GDP": (
+            "한국의 2024년 GDP는 약 1조 7천억 달러(명목 기준)이다. "
+            "세계 13위 규모이며, 1인당 GDP는 약 33,000 달러이다."
+        ),
+        "한국 인구": (
+            "한국의 인구는 약 5,150만 명이다 (2024년 기준). "
+            "수도 서울의 인구는 약 950만 명이다."
+        ),
+        "인공지능 시장": (
+            "글로벌 AI 시장 규모는 2024년 약 2,000억 달러이며, "
+            "2030년까지 연평균 35% 이상 성장이 예상된다."
+        ),
+        "서울 날씨": "서울의 현재 기온은 25°C, 맑음이다.",
+        "부산 날씨": "부산의 현재 기온은 28°C, 구름 조금이다.",
+    }
+
+    query_lower = query.lower()
+    for key, value in knowledge_base.items():
+        if any(word in query_lower for word in key.split()):
+            return value
+
+    return f"'{query}'에 대한 검색 결과를 찾지 못했다. 다른 키워드로 검색해 보라."
+
+
+@tool
+def calculator(expression: str) -> str:
+    """수학 계산을 수행한다.
+
+    사칙연산(+, -, *, /), 거듭제곱(**), 나머지(%), 정수 나눗셈(//)을 지원한다.
+    괄호를 사용하여 연산 우선순위를 지정할 수 있다.
+
+    Args:
+        expression: 계산할 수학 표현식 (예: "2 + 3", "(10 + 5) * 2", "2 ** 10")
+    """
+    safe_builtins = {
+        "abs": abs, "round": round, "min": min, "max": max, "pow": pow,
+    }
+    try:
+        result = eval(expression, {"__builtins__": safe_builtins})
+        return f"{expression} = {result}"
+    except ZeroDivisionError:
+        return "오류: 0으로 나눌 수 없다."
+    except Exception as e:
+        return f"계산 오류: {e}"
+
+
+@tool
+def get_current_time() -> str:
+    """현재 날짜, 시간, 요일 정보를 반환한다."""
+    now = datetime.now()
+    weekdays = ["월요일", "화요일", "수요일", "목요일", "금요일", "토요일", "일요일"]
+    return (
+        f"현재 시각: {now.strftime('%Y년 %m월 %d일')} "
+        f"{weekdays[now.weekday()]} "
+        f"{now.strftime('%H시 %M분 %S초')}"
+    )
+
+
+# ─── 리서치 에이전트 생성 ───
+model = ChatAnthropic(model="claude-sonnet-4-20250514")
+
+research_agent = create_react_agent(
+    model,
+    tools=[web_search, calculator, get_current_time],
+    prompt=(
+        "당신은 전문 리서치 어시스턴트이다.\n\n"
+        "## 규칙\n"
+        "1. 사실에 기반한 정확한 답변을 제공한다.\n"
+        "2. 숫자나 통계가 필요한 경우 반드시 검색 도구로 확인한다.\n"
+        "3. 계산이 필요하면 반드시 계산기 도구를 사용한다.\n"
+        "4. 추측하지 않고, 확인된 정보만 전달한다.\n"
+        "5. 답변은 한국어로, 읽기 쉽게 구조화하여 제공한다.\n"
+        "6. 여러 정보를 종합해야 하는 경우 단계별로 조사한다.\n"
+    )
+)
+
+
+# ─── 대화 헬퍼 함수 ───
+def chat(agent, question: str):
+    """에이전트에게 질문하고 결과를 보기 좋게 출력한다."""
+    print(f"\n{'='*70}")
+    print(f"  질문: {question}")
+    print(f"{'='*70}")
+
+    result = agent.invoke({
+        "messages": [HumanMessage(content=question)]
+    })
+
+    step = 0
+    for msg in result["messages"]:
+        if msg.type == "human":
+            continue  # 이미 위에서 출력함
+        elif msg.type == "ai":
+            if msg.tool_calls:
+                for tc in msg.tool_calls:
+                    step += 1
+                    print(f"\n  [{step}단계] 도구 호출: {tc['name']}")
+                    print(f"      인자: {tc['args']}")
+            if msg.content:
+                content = msg.content if isinstance(msg.content, str) else str(msg.content)
+                if content.strip():
+                    print(f"\n  [최종 답변]")
+                    for line in content.split("\n"):
+                        print(f"  {line}")
+        elif msg.type == "tool":
+            print(f"      결과: {msg.content}")
+
+    print(f"\n{'─'*70}")
+    return result
+
+
+# ─── 테스트 시나리오 ───
+
+# 시나리오 1: 단순 검색
+chat(research_agent, "Python 3.13의 주요 기능이 뭐야?")
+
+# 시나리오 2: 검색 + 계산 조합
+chat(research_agent, "한국 GDP가 얼마이고, 인구로 나누면 1인당 GDP는 얼마야?")
+
+# 시나리오 3: 현재 시간 + 추론
+chat(research_agent, "지금 몇 시야? 오늘이 무슨 요일이야?")
+
+# 시나리오 4: 복합 질문 — 여러 단계의 추론 필요
+chat(research_agent,
+    "글로벌 AI 시장이 연평균 35% 성장한다면, "
+    "현재 2000억 달러에서 3년 후에는 얼마가 될까?"
+)</code></pre>
+      </div>
+
+      <h3>실행 결과 예시</h3>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-bash">======================================================================
+  질문: 글로벌 AI 시장이 연평균 35% 성장한다면,
+        현재 2000억 달러에서 3년 후에는 얼마가 될까?
+======================================================================
+
+  [1단계] 도구 호출: web_search
+      인자: {'query': '인공지능 시장 규모'}
+      결과: 글로벌 AI 시장 규모는 2024년 약 2,000억 달러이며, ...
+
+  [2단계] 도구 호출: calculator
+      인자: {'expression': '2000 * (1.35 ** 3)'}
+      결과: 2000 * (1.35 ** 3) = 4920.75
+
+  [최종 답변]
+  글로벌 AI 시장이 연평균 35%로 성장할 경우:
+
+  - 현재 (2024년): 2,000억 달러
+  - 1년 후: 2,700억 달러
+  - 2년 후: 3,645억 달러
+  - 3년 후: **약 4,921억 달러**
+
+  3년 만에 약 2.46배 성장하여 거의 5,000억 달러에
+  달하게 된다.
+
+----------------------------------------------------------------------</code></pre>
+      </div>
+    </section>
+
+    <!-- 9. 여러 턴 대화 -->
+    <section>
+      <h2>여러 턴 대화</h2>
+      <p>
+        이전 대화 내용을 유지하면서 연속적으로 질문하려면,
+        이전 결과의 메시지를 다음 호출에 포함시킨다.
+      </p>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python"># 멀티 턴 대화 예시
+from langchain_core.messages import HumanMessage
+
+# 첫 번째 턴
+result1 = research_agent.invoke({
+    "messages": [HumanMessage(content="한국 GDP가 얼마야?")]
+})
+
+print("턴 1 답변:", result1["messages"][-1].content)
+
+# 두 번째 턴 — 이전 메시지를 포함
+result2 = research_agent.invoke({
+    "messages": result1["messages"] + [
+        HumanMessage(content="그걸 달러가 아니라 원화로 환산하면 얼마야? 환율 1,300원으로 계산해줘")
+    ]
+})
+
+print("턴 2 답변:", result2["messages"][-1].content)
+
+# 세 번째 턴 — 이전 모든 메시지 포함
+result3 = research_agent.invoke({
+    "messages": result2["messages"] + [
+        HumanMessage(content="1인당으로 계산하면 얼마야?")
+    ]
+})
+
+print("턴 3 답변:", result3["messages"][-1].content)</code></pre>
+      </div>
+
+      <div class="info-box info-box--tip">
+        <div class="info-box__title">TIP</div>
+        <p>
+          <strong>주의:</strong> 메시지가 계속 쌓이면 LLM의 컨텍스트 윈도우를 초과할 수 있다.
+          긴 대화에서는 이전 메시지를 요약하거나, 중요한 메시지만 유지하는 전략이 필요하다.
+          이후 챕터에서 다룰 <strong>메모리와 체크포인팅</strong>이 이 문제를 해결한다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 10. 핵심 정리 -->
+    <section>
+      <h2>핵심 정리</h2>
+      <ul>
+        <li><strong>ReAct</strong> = Reasoning + Acting. LLM이 생각하고, 행동하고, 관찰하는 반복 패턴이다.</li>
+        <li><code>create_react_agent(model, tools)</code> 한 줄로 ReAct 에이전트를 생성할 수 있다.</li>
+        <li>내부적으로 <code>agent</code> 노드와 <code>tools</code> 노드가 루프를 형성한다.</li>
+        <li><code>prompt</code> 파라미터로 에이전트의 역할과 행동 규칙을 정의한다.</li>
+        <li>여러 도구를 조합하면 LLM이 복합적인 질문도 단계별로 해결한다.</li>
+        <li>프로토타이핑에는 <code>create_react_agent</code>, 복잡한 워크플로우에는 직접 구축이 적합하다.</li>
+        <li>이전 메시지를 포함시키면 멀티 턴 대화가 가능하다.</li>
+      </ul>
+    </section>
+
+    <nav class="page-nav"></nav>
+  </main>
+</div>
+
+<script src="../js/nav.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-json.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.js"></script>
+</body>
+</html>

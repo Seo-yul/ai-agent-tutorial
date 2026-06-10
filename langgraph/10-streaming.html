@@ -1,0 +1,828 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>스트리밍 - AI Agent 개발 튜토리얼</title>
+  <link rel="stylesheet" href="../css/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.css">
+</head>
+<body>
+
+<header class="site-header">
+  <button class="hamburger" aria-label="메뉴">
+    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+  </button>
+  <a href="../index.html" class="site-header__title"><span>AI Agent</span> 개발 튜토리얼</a>
+</header>
+
+<div class="layout">
+  <nav class="sidebar"></nav>
+  <main class="main">
+    <span class="chapter-badge chapter-badge--lg-advanced">심화 과정</span>
+    <h1>스트리밍</h1>
+    <p class="chapter-subtitle">에이전트의 실행 과정을 실시간으로 스트리밍한다</p>
+
+    <!-- 섹션 1: 왜 스트리밍인가? -->
+    <h2>왜 스트리밍인가?</h2>
+
+    <p>
+      AI 에이전트는 단순히 LLM을 한 번 호출하는 것이 아니라,
+      여러 노드를 거치며 도구 호출, 데이터 검색, 분석 등 복잡한 과정을 수행한다.
+      <code>invoke()</code>를 사용하면 모든 처리가 끝날 때까지 기다려야 하므로,
+      사용자는 아무런 피드백 없이 수 초에서 수십 초를 기다리게 된다.
+      이는 매우 나쁜 사용자 경험(UX)을 야기한다.
+    </p>
+
+    <p>
+      <strong>스트리밍(Streaming)</strong>을 사용하면 이 문제를 해결할 수 있다:
+    </p>
+
+    <ul>
+      <li><strong>중간 과정 표시:</strong> 어떤 노드가 실행 중인지, 어떤 도구를 호출했는지 실시간으로 보여준다.</li>
+      <li><strong>토큰 단위 출력:</strong> LLM 응답을 한 글자씩 스트리밍하여 ChatGPT처럼 타이핑 효과를 제공한다.</li>
+      <li><strong>진행 상태 모니터링:</strong> 멀티스텝 워크플로우의 진행 상황을 사용자에게 알려준다.</li>
+      <li><strong>체감 응답 시간 단축:</strong> 실제 처리 시간은 같더라도, 중간 결과를 보여줌으로써 체감 대기 시간을 크게 줄인다.</li>
+    </ul>
+
+    <div class="diagram">
+invoke() vs stream() 비교
+
+  [invoke() 방식]
+  사용자 요청 ──▶ ............대기............ ──▶ 최종 결과
+                 (아무런 피드백 없음)
+
+  [stream() 방식]
+  사용자 요청 ──▶ Node A 완료 ──▶ Node B 완료 ──▶ 토큰1 토큰2 ... ──▶ 완료
+                  (실시간 이벤트)   (실시간 이벤트)   (글자씩 출력)
+    </div>
+
+    <div class="info-box info-box--info">
+      <div class="info-box__title">INFO</div>
+      <p>
+        LangGraph는 다양한 수준의 스트리밍을 지원한다.
+        노드 실행 완료 단위의 거친(coarse) 스트리밍부터
+        LLM 토큰 단위의 세밀한(fine-grained) 스트리밍까지,
+        용도에 맞는 모드를 선택할 수 있다.
+      </p>
+    </div>
+
+    <!-- 섹션 2: stream() 기본 -->
+    <h2>stream() 기본</h2>
+
+    <p>
+      <code>stream()</code> 메서드는 <code>invoke()</code>와 동일한 입력을 받지만,
+      결과를 한꺼번에 반환하는 대신 이벤트를 하나씩 생성(yield)한다.
+      기본 모드에서는 각 노드 실행이 완료될 때마다 이벤트가 발생한다.
+    </p>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-python">from typing_extensions import TypedDict
+from langgraph.graph import StateGraph, START, END
+from langgraph.checkpoint.memory import InMemorySaver
+from langchain_openai import ChatOpenAI
+from langgraph.graph import MessagesState
+
+
+# 간단한 도구 사용 에이전트 구성
+llm = ChatOpenAI(model="gpt-4o-mini")
+
+
+def chatbot(state: MessagesState) -> dict:
+    response = llm.invoke(state["messages"])
+    return {"messages": [response]}
+
+
+graph = StateGraph(MessagesState)
+graph.add_node("chatbot", chatbot)
+graph.add_edge(START, "chatbot")
+graph.add_edge("chatbot", END)
+
+checkpointer = InMemorySaver()
+app = graph.compile(checkpointer=checkpointer)
+
+config = {"configurable": {"thread_id": "stream-demo"}}
+
+# stream()으로 실행 — 각 노드 완료 시 이벤트 발생
+for event in app.stream(
+    {"messages": [{"role": "user", "content": "서울 날씨 알려줘"}]},
+    config
+):
+    print(event)
+    print("---")</code></pre>
+    </div>
+
+    <p>
+      기본 <code>stream()</code>의 출력 형식은 딕셔너리로,
+      키가 노드 이름이고 값이 해당 노드의 출력이다:
+    </p>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-python"># 출력 예시:
+# {'chatbot': {'messages': [AIMessage(content="서울의 현재 날씨는...")]}}
+# ---</code></pre>
+    </div>
+
+    <p>
+      여러 노드가 있는 그래프에서는 각 노드가 완료될 때마다 이벤트가 발생하므로,
+      진행 상황을 실시간으로 추적할 수 있다:
+    </p>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-python"># 여러 노드가 있는 경우 출력 예시:
+# {'search': {'context': ['문서1', '문서2']}}
+# ---
+# {'analyze': {'analysis': '분석 결과...'}}
+# ---
+# {'generate': {'messages': [AIMessage(content="최종 답변...")]}}
+# ---</code></pre>
+    </div>
+
+    <!-- 섹션 3: stream_mode 옵션 -->
+    <h2>stream_mode 옵션</h2>
+
+    <p>
+      <code>stream()</code>의 <code>stream_mode</code> 파라미터를 통해
+      어떤 방식으로 이벤트를 받을지 선택할 수 있다.
+      LangGraph는 여러 가지 스트리밍 모드를 제공하며,
+      각 모드는 서로 다른 수준의 정보를 반환한다.
+    </p>
+
+    <h3>values 모드</h3>
+
+    <p>
+      <code>"values"</code> 모드는 각 단계에서 <strong>전체 상태</strong>를 반환한다.
+      노드가 실행될 때마다 그 시점의 전체 State 스냅샷을 받을 수 있어,
+      상태의 변화를 전체적으로 추적하고 싶을 때 유용하다.
+    </p>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-python"># values 모드: 각 단계의 전체 상태 반환
+for event in app.stream(
+    {"messages": [{"role": "user", "content": "안녕하세요!"}]},
+    config,
+    stream_mode="values"
+):
+    messages = event["messages"]
+    print(f"현재 메시지 수: {len(messages)}")
+    # 마지막 메시지 내용 출력
+    last = messages[-1]
+    if hasattr(last, "content"):
+        print(f"  마지막 메시지: {last.content[:80]}...")
+    else:
+        print(f"  마지막 메시지: {last['content'][:80]}...")
+    print()</code></pre>
+    </div>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-python"># values 모드 출력 예시:
+# 현재 메시지 수: 1
+#   마지막 메시지: 안녕하세요!...
+#
+# 현재 메시지 수: 2
+#   마지막 메시지: 안녕하세요! 무엇을 도와드릴까요?...</code></pre>
+    </div>
+
+    <h3>updates 모드</h3>
+
+    <p>
+      <code>"updates"</code> 모드는 각 단계에서 <strong>변경된 부분만</strong> 반환한다.
+      이것이 기본 모드이며, 각 노드가 반환한 업데이트 딕셔너리를
+      노드 이름과 함께 제공한다. 네트워크 대역폭을 절약하고
+      변경 사항만 추적하고 싶을 때 적합하다.
+    </p>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-python"># updates 모드: 변경된 부분만 반환 (기본 모드)
+for event in app.stream(
+    {"messages": [{"role": "user", "content": "안녕하세요!"}]},
+    config,
+    stream_mode="updates"
+):
+    for node_name, update in event.items():
+        print(f"노드 '{node_name}' 실행 완료")
+        # update에는 해당 노드가 반환한 딕셔너리가 들어있다
+        if "messages" in update:
+            last_msg = update["messages"][-1]
+            print(f"  응답: {last_msg.content[:80]}...")
+        print()</code></pre>
+    </div>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-python"># updates 모드 출력 예시:
+# 노드 'chatbot' 실행 완료
+#   응답: 안녕하세요! 무엇을 도와드릴까요?...</code></pre>
+    </div>
+
+    <h3>messages 모드</h3>
+
+    <p>
+      <code>"messages"</code> 모드는 LLM 응답을 <strong>토큰 단위</strong>로 스트리밍한다.
+      ChatGPT처럼 글자가 한 글자씩 나타나는 실시간 타이핑 효과를 구현할 수 있다.
+      챗봇 UI를 구현할 때 가장 많이 사용하는 모드이다.
+    </p>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-python"># messages 모드: 토큰 단위 스트리밍
+for event in app.stream(
+    {"messages": [{"role": "user", "content": "파이썬의 장점을 3가지 알려줘"}]},
+    config,
+    stream_mode="messages"
+):
+    msg, metadata = event
+
+    # msg.content에 토큰(문자)이 하나씩 들어온다
+    if msg.content:
+        print(msg.content, end="", flush=True)
+
+print()  # 줄바꿈</code></pre>
+    </div>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-python"># messages 모드 출력 (토큰 단위로 점진적 출력):
+# 파|이|썬|의| |장|점|을| |3|가|지| |알|려|드|리|겠|습|니|다|.|
+# |
+# |1|.| |간|결|한| |문|법|:| |파|이|썬|은| |읽|기| |쉬|운| |문|법|을| ...
+# (한 글자씩 출력되는 효과)</code></pre>
+    </div>
+
+    <p>
+      <code>messages</code> 모드에서 각 이벤트는 <code>(message, metadata)</code> 튜플이다:
+    </p>
+
+    <ul>
+      <li><code>message</code> — 메시지 청크(chunk). <code>content</code> 속성에 토큰이 들어있다.</li>
+      <li><code>metadata</code> — 메타데이터. 어떤 노드에서 생성된 토큰인지 등의 정보를 포함한다.</li>
+    </ul>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-python"># metadata 활용
+for event in app.stream(
+    {"messages": [{"role": "user", "content": "안녕!"}]},
+    config,
+    stream_mode="messages"
+):
+    msg, metadata = event
+
+    # 어떤 노드에서 생성된 토큰인지 확인
+    node_name = metadata.get("langgraph_node", "unknown")
+
+    # 도구 호출 메시지와 일반 응답 메시지 구분
+    if hasattr(msg, "tool_calls") and msg.tool_calls:
+        print(f"\n[도구 호출] {msg.tool_calls}")
+    elif msg.content:
+        print(msg.content, end="", flush=True)</code></pre>
+    </div>
+
+    <div class="info-box info-box--tip">
+      <div class="info-box__title">TIP</div>
+      <p>
+        <code>messages</code> 모드는 LLM이 스트리밍을 지원해야 동작한다.
+        OpenAI, Anthropic 등 대부분의 주요 LLM 제공자는 스트리밍을 지원하지만,
+        일부 로컬 모델이나 커스텀 LLM은 지원하지 않을 수 있다.
+        또한 LangChain의 <code>ChatOpenAI</code> 등의 클래스를 사용해야
+        토큰 단위 스트리밍이 정상적으로 동작한다.
+      </p>
+    </div>
+
+    <!-- 섹션 4: 토큰 단위 스트리밍 상세 -->
+    <h2>토큰 단위 스트리밍 상세</h2>
+
+    <p>
+      <code>messages</code> 모드를 사용한 토큰 단위 스트리밍을 더 자세히 살펴보겠다.
+      도구 호출이 포함된 에이전트에서 각 이벤트의 종류를 구분하고
+      적절하게 처리하는 방법을 알아본다.
+    </p>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-python">from langchain_core.messages import AIMessageChunk, ToolMessage
+
+for event in app.stream(
+    {"messages": [{"role": "user", "content": "서울과 부산의 날씨를 비교해 줘"}]},
+    config,
+    stream_mode="messages"
+):
+    msg, metadata = event
+    node = metadata.get("langgraph_node", "")
+
+    # 1. AI 응답 토큰 — 사용자에게 보여줄 텍스트
+    if isinstance(msg, AIMessageChunk):
+        if msg.content:
+            print(msg.content, end="", flush=True)
+
+        # 도구 호출 시작 감지
+        if msg.tool_call_chunks:
+            for tc in msg.tool_call_chunks:
+                if tc.get("name"):
+                    print(f"\n🔧 도구 호출: {tc['name']}")
+
+    # 2. 도구 실행 결과
+    elif isinstance(msg, ToolMessage):
+        print(f"\n📋 도구 결과 ({msg.name}): {msg.content[:100]}...")
+
+print("\n\n--- 스트리밍 완료 ---")</code></pre>
+    </div>
+
+    <p>
+      이벤트의 흐름을 시각적으로 표현하면 다음과 같다:
+    </p>
+
+    <div class="diagram">
+토큰 단위 스트리밍 이벤트 흐름 (도구 사용 에이전트)
+
+  시간 ──────────────────────────────────────────────────▶
+
+  [AIMessageChunk]  "서울"  "과"  " 부산"  "의"  " 날씨"  "를"  ...
+       │
+       ▼  도구 호출 결정
+  [AIMessageChunk + tool_call_chunks]  도구: get_weather("서울")
+       │
+       ▼  도구 실행
+  [ToolMessage]  "서울 날씨: 맑음, 25도"
+       │
+       ▼  도구 호출 결정
+  [AIMessageChunk + tool_call_chunks]  도구: get_weather("부산")
+       │
+       ▼  도구 실행
+  [ToolMessage]  "부산 날씨: 흐림, 22도"
+       │
+       ▼  최종 답변 생성
+  [AIMessageChunk]  "서울"  "은"  " 맑고"  " 25"  "도"  ...
+    </div>
+
+    <!-- 섹션 5: 비동기 스트리밍 -->
+    <h2>비동기 스트리밍</h2>
+
+    <p>
+      비동기 애플리케이션(FastAPI, aiohttp 등)에서는
+      <code>astream()</code> 메서드를 사용하여 비동기로 스트리밍한다.
+      <code>stream()</code>과 사용법은 동일하지만,
+      <code>async for</code>를 사용하여 이벤트를 순회한다.
+    </p>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-python">import asyncio
+
+
+async def stream_chat(user_input: str):
+    """비동기 스트리밍 함수"""
+    config = {"configurable": {"thread_id": "async-demo"}}
+
+    # astream()은 async for로 순회한다
+    async for event in app.astream(
+        {"messages": [{"role": "user", "content": user_input}]},
+        config,
+        stream_mode="messages"
+    ):
+        msg, metadata = event
+        if msg.content:
+            print(msg.content, end="", flush=True)
+
+    print()  # 줄바꿈
+
+
+# 실행
+asyncio.run(stream_chat("파이썬의 역사에 대해 알려줘"))</code></pre>
+    </div>
+
+    <h3>FastAPI와 연동</h3>
+
+    <p>
+      웹 애플리케이션에서 스트리밍을 구현할 때는
+      FastAPI의 <code>StreamingResponse</code>와 결합하여
+      Server-Sent Events(SSE) 또는 청크 전송 방식으로 클라이언트에 실시간 데이터를 전달한다.
+    </p>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-python">from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
+import json
+
+fast_app = FastAPI()
+
+
+async def event_generator(user_input: str, thread_id: str):
+    """SSE 이벤트를 생성하는 비동기 제너레이터"""
+    config = {"configurable": {"thread_id": thread_id}}
+
+    async for event in app.astream(
+        {"messages": [{"role": "user", "content": user_input}]},
+        config,
+        stream_mode="messages"
+    ):
+        msg, metadata = event
+
+        if msg.content:
+            # SSE 형식으로 전송
+            data = json.dumps({
+                "type": "token",
+                "content": msg.content,
+                "node": metadata.get("langgraph_node", "")
+            }, ensure_ascii=False)
+            yield f"data: {data}\n\n"
+
+    # 스트리밍 완료 신호
+    yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
+
+@fast_app.post("/chat/stream")
+async def chat_stream(request: dict):
+    """스트리밍 채팅 엔드포인트"""
+    return StreamingResponse(
+        event_generator(request["message"], request["thread_id"]),
+        media_type="text/event-stream"
+    )</code></pre>
+    </div>
+
+    <div class="info-box info-box--info">
+      <div class="info-box__title">INFO</div>
+      <p>
+        <code>astream()</code>은 <code>stream()</code>의 비동기 버전이다.
+        동일한 <code>stream_mode</code> 옵션(<code>"values"</code>, <code>"updates"</code>,
+        <code>"messages"</code>)을 지원하며, 동작 방식도 동일하다.
+        비동기 환경에서는 항상 <code>astream()</code>을 사용하는 것이 권장된다.
+      </p>
+    </div>
+
+    <!-- 섹션 6: 여러 모드 동시 사용 -->
+    <h2>여러 모드 동시 사용</h2>
+
+    <p>
+      <code>stream_mode</code>에 리스트를 전달하면
+      여러 스트리밍 모드를 동시에 사용할 수 있다.
+      이 경우 각 이벤트는 <code>(mode, event)</code> 튜플로 반환되어,
+      어떤 모드의 이벤트인지 구분할 수 있다.
+    </p>
+
+    <p>
+      이 기능은 노드 실행 완료 알림과 토큰 스트리밍을 동시에 처리해야 할 때 유용하다.
+      예를 들어, 노드 실행 완료 시 UI에 프로그레스 바를 업데이트하면서
+      동시에 LLM 토큰을 실시간으로 출력할 수 있다.
+    </p>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-python"># 여러 모드를 리스트로 전달
+for mode, event in app.stream(
+    {"messages": [{"role": "user", "content": "LangGraph에 대해 설명해 줘"}]},
+    config,
+    stream_mode=["updates", "messages"]
+):
+    if mode == "updates":
+        # 노드 실행 완료 이벤트
+        for node_name in event:
+            print(f"\n[노드 완료] {node_name}")
+
+    elif mode == "messages":
+        # 토큰 단위 스트리밍 이벤트
+        msg, metadata = event
+        if msg.content:
+            print(msg.content, end="", flush=True)</code></pre>
+    </div>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-python"># 출력 예시:
+#
+# [노드 완료] chatbot
+# LangGraph는 LangChain 팀이 개발한 프레임워크로, AI 에이전트의 실행 흐름을
+# 그래프 구조로 모델링합니다. 주요 특징은 다음과 같습니다...
+#
+# (updates 이벤트와 messages 이벤트가 인터리브되어 출력된다)</code></pre>
+    </div>
+
+    <h3>실용적인 멀티모드 활용</h3>
+
+    <p>
+      도구 호출 에이전트에서 멀티모드 스트리밍을 활용하면,
+      사용자에게 풍부한 실시간 피드백을 제공할 수 있다:
+    </p>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-python">def pretty_stream(user_input: str, thread_id: str):
+    """사용자 친화적인 스트리밍 출력"""
+    config = {"configurable": {"thread_id": thread_id}}
+
+    print(f"사용자: {user_input}")
+    print("AI: ", end="")
+
+    for mode, event in app.stream(
+        {"messages": [{"role": "user", "content": user_input}]},
+        config,
+        stream_mode=["updates", "messages"]
+    ):
+        if mode == "updates":
+            for node_name, update in event.items():
+                if node_name == "tools":
+                    # 도구 실행 완료
+                    tool_msgs = update.get("messages", [])
+                    for tm in tool_msgs:
+                        if hasattr(tm, "name"):
+                            print(f"\n  [도구 '{tm.name}' 실행 완료]")
+                            print(f"  결과: {tm.content[:100]}...")
+                    print("\nAI: ", end="")
+
+        elif mode == "messages":
+            msg, metadata = event
+            node = metadata.get("langgraph_node", "")
+
+            # chatbot 노드의 텍스트 응답만 출력
+            if node == "chatbot" and msg.content:
+                print(msg.content, end="", flush=True)
+
+    print("\n")
+
+
+# 실행
+pretty_stream("서울 날씨 알려줘", "pretty-demo")</code></pre>
+    </div>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-python"># 출력 예시:
+# 사용자: 서울 날씨 알려줘
+# AI:
+#   [도구 'get_weather' 실행 완료]
+#   결과: {"city": "서울", "temp": 25, "condition": "맑음"}...
+#
+# AI: 서울의 현재 날씨는 맑고 기온은 25도입니다. 쾌적한 날씨네요!</code></pre>
+    </div>
+
+    <div class="info-box info-box--warning">
+      <div class="info-box__title">WARNING</div>
+      <p>
+        여러 모드를 동시에 사용하면 이벤트가 인터리브(interleave)되어 도착한다.
+        즉, <code>updates</code> 이벤트와 <code>messages</code> 이벤트가 섞여서 순서대로 도착하므로,
+        <code>mode</code> 값으로 반드시 구분하여 처리해야 한다.
+        UI 구현 시 각 모드에 맞는 처리 로직을 분리하는 것이 중요하다.
+      </p>
+    </div>
+
+    <!-- 섹션 7: 실전 예제 — 실시간 응답 에이전트 -->
+    <h2>실전 예제: 실시간 응답 에이전트</h2>
+
+    <p>
+      이제 모든 스트리밍 개념을 종합하여,
+      도구를 호출하면서 중간 과정과 최종 답변을 실시간으로 스트리밍하는
+      완성된 에이전트를 구현한다.
+      이 에이전트는 검색 도구와 계산 도구를 사용하며,
+      비동기 스트리밍을 지원한다.
+    </p>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-python">import asyncio
+from typing_extensions import TypedDict
+from typing import Annotated
+from langgraph.graph import StateGraph, START, END, MessagesState
+from langgraph.prebuilt import ToolNode, tools_condition
+from langgraph.checkpoint.memory import InMemorySaver
+from langchain_openai import ChatOpenAI
+from langchain_core.tools import tool
+from langchain_core.messages import AIMessageChunk, ToolMessage
+
+
+# === 1. 도구 정의 ===
+
+@tool
+def search_web(query: str) -> str:
+    """웹에서 정보를 검색한다."""
+    # 실제로는 검색 API를 호출한다
+    results = {
+        "파이썬 최신 버전": "Python 3.13이 2024년 10월에 출시되었습니다. "
+                          "주요 기능: 향상된 에러 메시지, 실험적 JIT 컴파일러, "
+                          "free-threaded 빌드 지원 등이 포함되었습니다.",
+        "LangGraph": "LangGraph는 LangChain 팀이 만든 프레임워크로, "
+                     "AI 에이전트를 그래프 구조로 구현합니다. "
+                     "체크포인팅, HITL, 스트리밍 등을 지원합니다.",
+    }
+    # 쿼리와 가장 관련 있는 결과 반환
+    for key, value in results.items():
+        if any(word in query for word in key.split()):
+            return value
+    return f"'{query}'에 대한 검색 결과: 관련 정보를 찾았습니다."
+
+
+@tool
+def calculate(expression: str) -> str:
+    """수학 계산을 수행한다. expression에 파이썬 수식을 전달한다."""
+    try:
+        # 안전한 수식만 평가
+        allowed_names = {"__builtins__": {}}
+        result = eval(expression, allowed_names)
+        return f"계산 결과: {expression} = {result}"
+    except Exception as e:
+        return f"계산 오류: {e}"
+
+
+# === 2. 에이전트 구성 ===
+
+tools = [search_web, calculate]
+llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+llm_with_tools = llm.bind_tools(tools)
+
+
+def agent_node(state: MessagesState) -> dict:
+    """LLM을 호출하여 응답 또는 도구 호출을 결정하는 노드"""
+    response = llm_with_tools.invoke(state["messages"])
+    return {"messages": [response]}
+
+
+# 그래프 구성
+graph = StateGraph(MessagesState)
+
+graph.add_node("agent", agent_node)
+graph.add_node("tools", ToolNode(tools))
+
+graph.add_edge(START, "agent")
+graph.add_conditional_edges("agent", tools_condition)
+graph.add_edge("tools", "agent")
+
+checkpointer = InMemorySaver()
+app = graph.compile(checkpointer=checkpointer)
+
+
+# === 3. 동기 스트리밍 실행 ===
+
+def stream_agent(user_input: str, thread_id: str = "demo"):
+    """동기 방식으로 에이전트 응답을 스트리밍한다"""
+    config = {"configurable": {"thread_id": thread_id}}
+
+    print(f"\n{'='*60}")
+    print(f"사용자: {user_input}")
+    print(f"{'='*60}")
+
+    for mode, event in app.stream(
+        {"messages": [{"role": "user", "content": user_input}]},
+        config,
+        stream_mode=["updates", "messages"]
+    ):
+        if mode == "updates":
+            for node_name, update in event.items():
+                if node_name == "tools":
+                    # 도구 실행 결과 표시
+                    for msg in update.get("messages", []):
+                        if isinstance(msg, ToolMessage):
+                            print(f"\n  [도구 결과: {msg.name}]")
+                            content = msg.content
+                            if len(content) > 150:
+                                content = content[:150] + "..."
+                            print(f"  {content}")
+                            print()
+
+        elif mode == "messages":
+            msg, metadata = event
+            node = metadata.get("langgraph_node", "")
+
+            if node == "agent":
+                # 도구 호출 감지
+                if hasattr(msg, "tool_call_chunks") and msg.tool_call_chunks:
+                    for tc in msg.tool_call_chunks:
+                        if tc.get("name"):
+                            print(f"\n  [도구 호출: {tc['name']}]", end="")
+
+                # 텍스트 응답 스트리밍
+                elif msg.content:
+                    print(msg.content, end="", flush=True)
+
+    print(f"\n{'='*60}\n")
+
+
+# 실행 예제들
+stream_agent("파이썬 최신 버전에 대해 알려줘")
+stream_agent("1234 * 5678 계산해 줘")
+stream_agent("LangGraph가 뭐야?", "demo-2")
+
+
+# === 4. 비동기 스트리밍 실행 ===
+
+async def astream_agent(user_input: str, thread_id: str = "async-demo"):
+    """비동기 방식으로 에이전트 응답을 스트리밍한다"""
+    config = {"configurable": {"thread_id": thread_id}}
+
+    print(f"\n{'='*60}")
+    print(f"사용자: {user_input}")
+    print(f"{'='*60}")
+    print("AI: ", end="")
+
+    async for mode, event in app.astream(
+        {"messages": [{"role": "user", "content": user_input}]},
+        config,
+        stream_mode=["updates", "messages"]
+    ):
+        if mode == "updates":
+            for node_name, update in event.items():
+                if node_name == "tools":
+                    for msg in update.get("messages", []):
+                        if isinstance(msg, ToolMessage):
+                            print(f"\n  [도구 '{msg.name}' 완료: {msg.content[:80]}...]")
+                    print("\nAI: ", end="")
+
+        elif mode == "messages":
+            msg, metadata = event
+            node = metadata.get("langgraph_node", "")
+
+            if node == "agent" and msg.content:
+                print(msg.content, end="", flush=True)
+
+    print(f"\n{'='*60}\n")
+
+
+# 비동기 실행
+async def main():
+    await astream_agent("파이썬의 장점을 3가지 알려줘")
+    await astream_agent("7 * 8 + 3 * 4 계산해 줘")
+
+
+asyncio.run(main())</code></pre>
+    </div>
+
+    <p>
+      위 예제의 실행 결과는 다음과 같이 출력된다:
+    </p>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-bash">============================================================
+사용자: 파이썬 최신 버전에 대해 알려줘
+============================================================
+
+  [도구 호출: search_web]
+  [도구 결과: search_web]
+  Python 3.13이 2024년 10월에 출시되었습니다. 주요 기능: 향상된 에러 메시지, 실험적 JIT 컴파일러, free-threaded 빌드 지원 등이 포함되었습니다.
+
+파이썬의 최신 버전은 Python 3.13입니다. 2024년 10월에 출시되었으며,
+주요 새 기능으로는 다음이 있습니다:
+
+1. **향상된 에러 메시지**: 디버깅이 더 쉬워졌습니다.
+2. **실험적 JIT 컴파일러**: 성능 향상을 위한 새로운 기능입니다.
+3. **free-threaded 빌드 지원**: GIL 없이 멀티스레딩이 가능합니다.
+============================================================</code></pre>
+    </div>
+
+    <p>
+      이 실전 예제의 핵심 포인트는 다음과 같다:
+    </p>
+
+    <ul>
+      <li><strong>멀티모드 스트리밍:</strong> <code>["updates", "messages"]</code>를 동시에 사용하여 노드 완료 이벤트와 토큰 스트리밍을 모두 처리한다.</li>
+      <li><strong>도구 호출 감지:</strong> <code>tool_call_chunks</code>로 도구 호출 시작을 감지하고, <code>ToolMessage</code>로 실행 결과를 받는다.</li>
+      <li><strong>동기/비동기 지원:</strong> <code>stream()</code>과 <code>astream()</code> 양쪽 모두 동일한 패턴으로 구현할 수 있다.</li>
+      <li><strong>실시간 UX:</strong> 사용자는 도구 호출 과정과 최종 답변 생성 과정을 실시간으로 확인할 수 있다.</li>
+    </ul>
+
+    <div class="info-box info-box--tip">
+      <div class="info-box__title">TIP</div>
+      <p>
+        프로덕션 환경에서 스트리밍을 구현할 때는 다음 사항을 고려해야 한다:
+        (1) 네트워크 연결이 끊어질 때의 에러 처리,
+        (2) 스트리밍 타임아웃 설정,
+        (3) 클라이언트 측에서 이벤트를 재조립하는 로직,
+        (4) 동시 접속자가 많을 때의 리소스 관리.
+        FastAPI + SSE 조합은 이러한 요구사항을 잘 지원하는 일반적인 구성이다.
+      </p>
+    </div>
+
+    <!-- 정리 -->
+    <h2>정리</h2>
+
+    <p>이번 챕터에서 배운 내용을 정리한다:</p>
+
+    <ul>
+      <li><strong>스트리밍</strong>은 에이전트 실행의 중간 과정을 실시간으로 보여주어 UX를 크게 개선한다.</li>
+      <li><code>stream()</code> 메서드는 <code>invoke()</code> 대신 사용하며, 이벤트를 하나씩 생성(yield)한다.</li>
+      <li><strong>stream_mode</strong>로 스트리밍 수준을 선택한다: <code>"values"</code>(전체 상태), <code>"updates"</code>(변경분), <code>"messages"</code>(토큰 단위).</li>
+      <li><code>"messages"</code> 모드는 ChatGPT 같은 실시간 타이핑 효과를 구현할 때 사용한다.</li>
+      <li><code>astream()</code>은 비동기 환경(FastAPI 등)에서 사용하는 비동기 스트리밍 메서드이다.</li>
+      <li>여러 <code>stream_mode</code>를 리스트로 전달하면 동시에 사용할 수 있으며, <code>(mode, event)</code> 튜플로 구분한다.</li>
+    </ul>
+
+    <p>이번 챕터로 LangGraph 심화 과정의 스트리밍 학습을 마무리한다. 스트리밍은 실제 프로덕션 에이전트에서 필수적인 기능이므로, 다양한 모드를 직접 실습해 보기를 권장한다.</p>
+
+    <nav class="page-nav"></nav>
+  </main>
+</div>
+
+<script src="../js/nav.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-json.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.js"></script>
+</body>
+</html>

@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LangGraph란 무엇인가 - AI Agent 개발 튜토리얼</title>
+  <link rel="stylesheet" href="../css/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.css">
+</head>
+<body>
+
+<header class="site-header">
+  <button class="hamburger" aria-label="메뉴">
+    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+  </button>
+  <a href="../index.html" class="site-header__title"><span>AI Agent</span> 개발 튜토리얼</a>
+</header>
+
+<div class="layout">
+  <nav class="sidebar"></nav>
+  <main class="main">
+    <span class="chapter-badge chapter-badge--lg-basic">기본 과정</span>
+    <h1>LangGraph란 무엇인가</h1>
+    <p class="chapter-subtitle">그래프 기반 AI 에이전트 프레임워크를 이해한다</p>
+
+    <!-- 섹션 1: LangGraph란? -->
+    <h2>LangGraph란?</h2>
+
+    <p>
+      <strong>LangGraph</strong>는 LangChain 팀이 개발한 Python 프레임워크로,
+      AI 에이전트의 실행 흐름을 <strong>그래프(Graph)</strong> 구조로 모델링한다.
+      전통적인 프로그래밍에서 함수를 순차적으로 호출하는 방식과 달리,
+      LangGraph는 각 작업 단위를 <strong>노드(Node)</strong>로 정의하고
+      노드 간의 연결을 <strong>엣지(Edge)</strong>로 표현하여
+      복잡한 AI 워크플로우를 직관적으로 구성할 수 있게 해준다.
+    </p>
+
+    <p>
+      LangGraph의 핵심 아이디어는 간단하다.
+      AI 에이전트의 동작을 <strong>상태 머신(State Machine)</strong>으로 표현하는 것이다.
+      그래프의 각 노드가 상태를 받아 처리하고,
+      처리 결과에 따라 다음 노드로 이동하거나 조건에 따라 분기한다.
+      이 방식은 복잡한 에이전트 흐름을 시각적으로 이해하기 쉽게 만들어 주며,
+      디버깅과 유지보수를 크게 개선한다.
+    </p>
+
+    <div class="diagram">
+┌─────────────────────────────────────────────────────┐
+│                  LangGraph 개념도                     │
+│                                                     │
+│   ┌───────┐     ┌───────┐     ┌───────┐            │
+│   │ START │────▶│Node A │────▶│Node B │────▶ END   │
+│   └───────┘     └───────┘     └───────┘            │
+│                      │                              │
+│                      │ 조건부 엣지                    │
+│                      ▼                              │
+│                 ┌───────┐                           │
+│                 │Node C │────▶ END                  │
+│                 └───────┘                           │
+│                                                     │
+│   * 각 노드는 State를 받아 처리하고 업데이트를 반환     │
+│   * 엣지는 노드 간의 실행 흐름을 정의                  │
+└─────────────────────────────────────────────────────┘
+    </div>
+
+    <p>
+      LangGraph는 단독으로 사용할 수도 있고, LangChain과 함께 사용할 수도 있다.
+      LangChain의 도구(Tools), 프롬프트(Prompts), LLM 인터페이스를
+      LangGraph의 노드 안에서 자유롭게 활용할 수 있기 때문에
+      기존 LangChain 사용자라면 자연스럽게 전환할 수 있다.
+    </p>
+
+    <!-- 섹션 2: 왜 LangGraph인가? -->
+    <h2>왜 LangGraph인가?</h2>
+
+    <p>
+      기존의 AI 에이전트 프레임워크들은 몇 가지 근본적인 한계를 가지고 있었다.
+      이러한 한계를 이해하면 LangGraph가 왜 필요한지 명확해진다.
+    </p>
+
+    <h3>기존 에이전트 프레임워크의 문제점</h3>
+
+    <p>
+      <strong>1. 단순 체이닝의 한계:</strong>
+      초기 LLM 애플리케이션은 프롬프트 → LLM → 파서 → 출력과 같은
+      단순한 직렬 체인으로 구성되었다. 하지만 실제 프로덕션 환경에서는
+      조건에 따라 다른 처리를 해야 하거나, 루프를 돌거나,
+      여러 경로를 병렬로 실행해야 하는 경우가 빈번하다.
+      단순 체이닝으로는 이런 복잡한 흐름을 표현하기 어렵다.
+    </p>
+
+    <p>
+      <strong>2. 에러 처리와 재시도의 어려움:</strong>
+      LLM 호출은 본질적으로 불안정하다. API 타임아웃, 토큰 한도 초과,
+      잘못된 출력 형식 등 다양한 오류가 발생할 수 있다.
+      기존 프레임워크에서는 이런 에러를 체계적으로 처리하고
+      특정 단계만 재시도하는 것이 까다로웠다.
+    </p>
+
+    <p>
+      <strong>3. 상태 관리의 부재:</strong>
+      에이전트가 여러 단계를 거치면서 중간 결과를 기억하고
+      활용해야 하는 경우, 상태를 명시적으로 관리하는 메커니즘이 필요하다.
+      대부분의 프레임워크는 이를 개발자에게 전적으로 맡겼다.
+    </p>
+
+    <p>
+      <strong>4. 사람의 개입(Human-in-the-loop) 지원 부족:</strong>
+      중요한 결정을 내리기 전에 사람의 승인을 받거나,
+      에이전트의 판단을 사람이 수정해야 하는 경우가 많다.
+      이런 워크플로우를 자연스럽게 지원하는 프레임워크가 드물었다.
+    </p>
+
+    <h3>LangGraph의 5대 장점</h3>
+
+    <table>
+      <thead>
+        <tr>
+          <th>장점</th>
+          <th>설명</th>
+          <th>활용 사례</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Durable Execution<br>(실행 지속성)</strong></td>
+          <td>그래프 실행 중간에 체크포인트를 저장하여,
+              장애 발생 시 마지막 체크포인트에서 재개할 수 있다.</td>
+          <td>장시간 실행되는 에이전트,<br>서버 재시작 후 복구</td>
+        </tr>
+        <tr>
+          <td><strong>Human-in-the-loop<br>(사람 개입)</strong></td>
+          <td>특정 노드에서 실행을 일시 정지하고
+              사람의 입력이나 승인을 기다릴 수 있다.</td>
+          <td>민감한 작업 승인,<br>에이전트 판단 검증</td>
+        </tr>
+        <tr>
+          <td><strong>Memory<br>(단기/장기 메모리)</strong></td>
+          <td>대화 히스토리(단기 메모리)와 사용자 프로필 같은
+              영속적 정보(장기 메모리)를 체계적으로 관리한다.</td>
+          <td>멀티턴 대화,<br>개인화된 에이전트</td>
+        </tr>
+        <tr>
+          <td><strong>Debugging<br>(디버깅)</strong></td>
+          <td>LangSmith와 연동하여 각 노드의 입출력,
+              실행 시간, 토큰 사용량을 추적할 수 있다.</td>
+          <td>성능 최적화,<br>오류 원인 분석</td>
+        </tr>
+        <tr>
+          <td><strong>Production-ready<br>(프로덕션 배포)</strong></td>
+          <td>LangGraph Platform을 통해
+              그래프를 API 서버로 바로 배포할 수 있다.</td>
+          <td>REST API 서비스,<br>스트리밍 응답</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- 섹션 3: 핵심 개념 -->
+    <h2>핵심 개념</h2>
+
+    <p>
+      LangGraph를 이해하기 위해 반드시 알아야 하는 핵심 개념들을
+      하나씩 살펴본다. 이 개념들은 이후 모든 챕터의 기초가 된다.
+    </p>
+
+    <h3>State (상태)</h3>
+
+    <p>
+      <strong>State</strong>는 그래프를 통해 전달되는 공유 데이터 구조이다.
+      Python의 <code>TypedDict</code>를 사용하여 정의하며,
+      모든 노드가 이 State를 읽고 수정할 수 있다.
+      State는 그래프 실행의 시작부터 끝까지 유지되며,
+      각 노드가 처리를 마칠 때마다 업데이트된다.
+    </p>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-python">from typing_extensions import TypedDict
+
+class State(TypedDict):
+    """그래프에서 사용할 상태 정의"""
+    question: str      # 사용자 질문
+    answer: str        # 생성된 답변
+    context: list[str] # 참조 문서 목록</code></pre>
+    </div>
+
+    <h3>Node (노드)</h3>
+
+    <p>
+      <strong>Node</strong>는 실제 작업을 수행하는 단위이다.
+      Python 함수로 정의하며, State를 입력으로 받아
+      업데이트할 부분만 딕셔너리로 반환한다.
+      LLM 호출, 데이터베이스 조회, API 호출 등
+      어떤 작업이든 노드 안에서 수행할 수 있다.
+    </p>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-python">def search_node(state: State) -> dict:
+    """질문에 관련된 문서를 검색하는 노드"""
+    query = state["question"]
+    # 검색 로직 수행
+    documents = search_database(query)
+    return {"context": documents}  # State의 context만 업데이트</code></pre>
+    </div>
+
+    <h3>Edge (엣지)</h3>
+
+    <p>
+      <strong>Edge</strong>는 노드 간의 연결을 정의한다.
+      크게 두 가지 종류가 있다:
+    </p>
+
+    <ul>
+      <li><strong>일반 엣지 (Normal Edge):</strong> A 노드 실행 후 항상 B 노드로 이동</li>
+      <li><strong>조건부 엣지 (Conditional Edge):</strong> 조건에 따라 다른 노드로 분기</li>
+    </ul>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-python"># 일반 엣지: node_a 다음에 항상 node_b 실행
+graph.add_edge("node_a", "node_b")
+
+# 조건부 엣지: 조건 함수의 반환값에 따라 분기
+def decide_next(state: State) -> str:
+    if state["score"] > 0.8:
+        return "good_path"
+    return "retry_path"
+
+graph.add_conditional_edges("evaluate", decide_next)</code></pre>
+    </div>
+
+    <h3>START와 END</h3>
+
+    <p>
+      <strong>START</strong>는 그래프의 진입점이다.
+      그래프가 실행되면 START에서 시작하여 연결된 첫 번째 노드로 이동한다.
+      <strong>END</strong>는 그래프의 종료 지점이다.
+      노드가 END로 연결되면 그래프 실행이 완료되고 최종 State가 반환된다.
+    </p>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-python">from langgraph.graph import START, END, StateGraph
+
+graph = StateGraph(State)
+graph.add_edge(START, "first_node")   # 시작점 → 첫 번째 노드
+graph.add_edge("last_node", END)      # 마지막 노드 → 종료</code></pre>
+    </div>
+
+    <h3>StateGraph와 compile()</h3>
+
+    <p>
+      <strong>StateGraph</strong>는 그래프를 정의하는 클래스이다.
+      여기에 노드와 엣지를 추가하여 그래프의 구조를 설계한다.
+      설계가 완료되면 <code>compile()</code> 메서드를 호출하여
+      실행 가능한 <strong>CompiledGraph</strong> 객체를 생성한다.
+    </p>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-python"># 1. 그래프 정의
+graph = StateGraph(State)
+
+# 2. 노드 추가
+graph.add_node("search", search_node)
+graph.add_node("generate", generate_node)
+
+# 3. 엣지 추가
+graph.add_edge(START, "search")
+graph.add_edge("search", "generate")
+graph.add_edge("generate", END)
+
+# 4. 컴파일 → 실행 가능한 객체 생성
+app = graph.compile()</code></pre>
+    </div>
+
+    <h3>invoke() 실행</h3>
+
+    <p>
+      <strong>invoke()</strong>는 컴파일된 그래프를 실행하는 메서드이다.
+      초기 State를 딕셔너리로 전달하면,
+      그래프가 START부터 END까지 순차적으로 실행되고
+      최종 State를 반환한다.
+    </p>
+
+    <div class="code-block">
+      <button class="code-block__copy">복사</button>
+      <pre class="line-numbers"><code class="language-python"># 초기 상태를 전달하여 그래프 실행
+result = app.invoke({
+    "question": "LangGraph란 무엇인가?",
+    "answer": "",
+    "context": []
+})
+
+# 최종 상태 확인
+print(result["answer"])  # 생성된 답변 출력</code></pre>
+    </div>
+
+    <div class="info-box info-box--tip">
+      <div class="info-box__title">TIP</div>
+      <p>
+        <code>invoke()</code> 외에도 <code>stream()</code> 메서드를 사용하면
+        각 노드의 실행 결과를 실시간으로 스트리밍 받을 수 있다.
+        이는 사용자에게 진행 상황을 보여줄 때 유용하다.
+      </p>
+    </div>
+
+    <!-- 섹션 4: LangGraph vs 다른 프레임워크 -->
+    <h2>LangGraph vs 다른 프레임워크</h2>
+
+    <p>
+      AI 에이전트를 구축하는 데 사용할 수 있는 프레임워크는 여러 가지가 있다.
+      각 프레임워크의 특징을 비교하여 LangGraph가 어떤 상황에 적합한지 이해한다.
+    </p>
+
+    <table>
+      <thead>
+        <tr>
+          <th>비교 항목</th>
+          <th>LangGraph</th>
+          <th>LangChain Agent</th>
+          <th>AutoGen</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>흐름 제어</strong></td>
+          <td>그래프 기반<br>(세밀한 제어 가능)</td>
+          <td>LLM이 자동 판단<br>(개발자 개입 제한적)</td>
+          <td>대화 기반<br>(에이전트 간 대화)</td>
+        </tr>
+        <tr>
+          <td><strong>상태 관리</strong></td>
+          <td>명시적 State 정의<br>(TypedDict)</td>
+          <td>암시적<br>(내부 관리)</td>
+          <td>메시지 기반<br>(대화 히스토리)</td>
+        </tr>
+        <tr>
+          <td><strong>디버깅</strong></td>
+          <td>그래프 시각화 +<br>LangSmith 연동</td>
+          <td>로그 기반</td>
+          <td>로그 기반</td>
+        </tr>
+        <tr>
+          <td><strong>학습 곡선</strong></td>
+          <td>중간<br>(그래프 개념 필요)</td>
+          <td>낮음<br>(빠른 시작)</td>
+          <td>중간<br>(멀티 에이전트 개념)</td>
+        </tr>
+        <tr>
+          <td><strong>유연성</strong></td>
+          <td>매우 높음<br>(세부 제어 가능)</td>
+          <td>낮음<br>(LLM에 의존)</td>
+          <td>중간<br>(대화 패턴에 제한)</td>
+        </tr>
+        <tr>
+          <td><strong>프로덕션 준비</strong></td>
+          <td>LangGraph Platform<br>배포 지원</td>
+          <td>직접 구현 필요</td>
+          <td>직접 구현 필요</td>
+        </tr>
+        <tr>
+          <td><strong>적합한 사용 사례</strong></td>
+          <td>복잡한 워크플로우,<br>프로덕션 에이전트</td>
+          <td>간단한 도구 사용<br>에이전트</td>
+          <td>멀티 에이전트<br>협업 시스템</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="info-box info-box--info">
+      <div class="info-box__title">INFO</div>
+      <p>
+        LangGraph는 LangChain Agent를 대체하는 것이 아니라 보완하는 관계이다.
+        간단한 도구 사용 에이전트는 LangChain Agent로 충분하지만,
+        복잡한 워크플로우나 프로덕션 환경에서는 LangGraph가 더 적합하다.
+        실제로 LangChain 팀도 복잡한 에이전트 구축에는 LangGraph를 권장하고 있다.
+      </p>
+    </div>
+
+    <!-- 섹션 5: 그래프 실행 흐름 -->
+    <h2>그래프 실행 흐름 이해하기</h2>
+
+    <p>
+      가장 간단한 직렬 그래프의 실행 흐름을 단계별로 살펴본다.
+      아래 그래프는 START에서 시작하여 Node A와 Node B를 거쳐 END에 도달하는 구조이다.
+    </p>
+
+    <div class="diagram">
+실행 흐름: 직렬 그래프
+
+  ┌───────┐      ┌────────┐      ┌────────┐      ┌─────┐
+  │ START │─────▶│ Node A │─────▶│ Node B │─────▶│ END │
+  └───────┘      └────────┘      └────────┘      └─────┘
+      │               │               │              │
+      ▼               ▼               ▼              ▼
+  초기 State      State 업데이트   State 업데이트   최종 State
+  {text:"시작"}   {text:"시작→A"}  {text:"시작→A→B"} 반환
+    </div>
+
+    <h3>실행 단계 상세</h3>
+
+    <p><strong>Step 1 — 초기화:</strong>
+      <code>invoke()</code>에 전달된 초기 State가 그래프에 주입된다.
+      예를 들어 <code>{"text": "시작"}</code>이 초기 State이다.
+    </p>
+
+    <p><strong>Step 2 — START → Node A:</strong>
+      START에서 첫 번째 노드인 Node A로 이동한다.
+      Node A 함수가 현재 State를 인자로 받아 실행된다.
+      Node A는 <code>{"text": "시작 → A 처리됨"}</code>을 반환하고,
+      LangGraph가 이 반환값으로 State를 업데이트한다.
+    </p>
+
+    <p><strong>Step 3 — Node A → Node B:</strong>
+      업데이트된 State가 Node B로 전달된다.
+      Node B는 받은 State를 처리하고 <code>{"text": "시작 → A 처리됨 → B 처리됨"}</code>을 반환한다.
+      State가 다시 업데이트된다.
+    </p>
+
+    <p><strong>Step 4 — Node B → END:</strong>
+      Node B의 처리가 완료되면 END로 이동하여 그래프 실행이 종료된다.
+      최종 State인 <code>{"text": "시작 → A 처리됨 → B 처리됨"}</code>이
+      <code>invoke()</code>의 반환값으로 돌아온다.
+    </p>
+
+    <div class="info-box info-box--tip">
+      <div class="info-box__title">TIP</div>
+      <p>
+        이 직렬 흐름은 가장 기본적인 패턴이다.
+        실제 에이전트에서는 조건부 엣지를 사용한 분기, 루프,
+        병렬 실행 등 더 복잡한 흐름을 구성하게 된다.
+        이후 챕터에서 이런 고급 패턴을 하나씩 배워 나간다.
+      </p>
+    </div>
+
+    <h2>정리</h2>
+
+    <p>이번 챕터에서 배운 내용을 정리한다:</p>
+
+    <ul>
+      <li><strong>LangGraph</strong>는 AI 에이전트의 실행 흐름을 그래프로 모델링하는 프레임워크이다.</li>
+      <li>핵심 구성 요소는 <strong>State</strong>(공유 데이터), <strong>Node</strong>(작업 단위), <strong>Edge</strong>(연결)이다.</li>
+      <li><strong>StateGraph</strong>로 그래프를 정의하고, <strong>compile()</strong>로 컴파일한 뒤, <strong>invoke()</strong>로 실행한다.</li>
+      <li>LangGraph는 실행 지속성, 사람 개입, 메모리, 디버깅, 프로덕션 배포 등 5대 장점을 제공한다.</li>
+      <li>기존 프레임워크 대비 세밀한 흐름 제어와 명시적 상태 관리가 LangGraph의 핵심 차별점이다.</li>
+    </ul>
+
+    <p>다음 챕터에서는 실제 개발을 위한 환경 설정을 진행한다.</p>
+
+    <nav class="page-nav"></nav>
+  </main>
+</div>
+
+<script src="../js/nav.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-json.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.js"></script>
+</body>
+</html>

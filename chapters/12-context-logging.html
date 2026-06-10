@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Context 및 Logging - MCP Python SDK 튜토리얼</title>
+  <link rel="stylesheet" href="../css/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.css">
+</head>
+<body>
+
+<header class="site-header">
+  <button class="hamburger" aria-label="메뉴">
+    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+  </button>
+  <a href="../index.html" class="site-header__title"><span>MCP</span> Python SDK 튜토리얼</a>
+  <span class="site-header__badge">v1.12.x</span>
+</header>
+
+<div class="layout">
+  <nav class="sidebar"></nav>
+  <main class="main">
+    <span class="chapter-badge chapter-badge--advanced">심화 과정</span>
+    <h1>Chapter 12. Context 및 Logging</h1>
+    <p class="chapter-subtitle">요청 컨텍스트를 활용하고 구조화된 로깅을 구현한다</p>
+
+    <!-- 12.1 ServerRequestContext란? -->
+    <section>
+      <h2 id="server-request-context">12.1 ServerRequestContext란?</h2>
+      <p>
+        MCP Python SDK에서 <strong>ServerRequestContext</strong>는 도구 핸들러가 호출될 때 전달되는 컨텍스트 객체다.
+        이 객체는 현재 요청에 대한 메타 정보, 세션 접근, 로깅 기능 등을 제공한다.
+      </p>
+      <p>
+        FastMCP를 사용할 때는 <code>Context</code>라는 고수준 래퍼를 통해 컨텍스트에 접근하며,
+        저수준 API를 사용할 때는 <code>ServerRequestContext</code>를 직접 다룬다.
+      </p>
+
+      <div class="diagram">
+┌─────────────────────────────────────────────────────┐
+│                    MCP 서버                          │
+│                                                     │
+│  클라이언트 요청                                      │
+│       │                                             │
+│       ▼                                             │
+│  ┌─────────────────────────┐                        │
+│  │   Context / Request     │                        │
+│  │   Context               │                        │
+│  │                         │                        │
+│  │  • 세션 정보             │                        │
+│  │  • 로깅 메서드           │                        │
+│  │  • 진행률 보고           │                        │
+│  │  • HTTP 요청 정보        │                        │
+│  └────────┬────────────────┘                        │
+│           │                                         │
+│           ▼                                         │
+│  ┌─────────────────────────┐                        │
+│  │   도구 핸들러 함수        │                        │
+│  │   async def my_tool(    │                        │
+│  │       ctx: Context,     │                        │
+│  │       ...               │                        │
+│  │   )                     │                        │
+│  └─────────────────────────┘                        │
+└─────────────────────────────────────────────────────┘
+      </div>
+
+      <div class="info-box info-box--info">
+        <div class="info-box__title">INFO</div>
+        <p>
+          Context 객체는 FastMCP가 자동으로 주입하므로, 도구 함수의 매개변수에 <code>ctx: Context</code>를 선언하기만 하면 된다.
+          호출 시 명시적으로 전달할 필요가 없다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 12.2 Context를 통한 로깅 -->
+    <section>
+      <h2 id="context-logging">12.2 Context를 통한 로깅</h2>
+      <p>
+        FastMCP의 <code>Context</code> 객체는 다양한 로그 레벨의 메시지를 클라이언트로 전송하는 편의 메서드를 제공한다.
+        이 로그 메시지는 MCP 프로토콜의 <code>notifications/message</code>를 통해 클라이언트에게 전달된다.
+      </p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python">from mcp.server.fastmcp import FastMCP, Context
+
+mcp = FastMCP("Logging Example")
+
+@mcp.tool()
+async def process_data(ctx: Context, data: str) -> str:
+    """데이터를 처리한다"""
+    # 다양한 로그 레벨 사용
+    await ctx.debug("디버그 메시지")
+    await ctx.info("처리 시작")
+    await ctx.warning("경고 메시지")
+    await ctx.error("에러 메시지")
+
+    # 구조화된 데이터 로깅
+    await ctx.info({"action": "process", "input_length": len(data)})
+
+    return f"처리 완료: {data}"</code></pre>
+      </div>
+
+      <p>
+        각 로그 메서드는 문자열뿐 아니라 딕셔너리 같은 구조화된 데이터도 전달할 수 있다.
+        클라이언트는 이 로그 메시지를 받아서 사용자에게 표시하거나, 자체 로깅 시스템에 기록한다.
+      </p>
+
+      <div class="info-box info-box--tip">
+        <div class="info-box__title">TIP</div>
+        <p>
+          구조화된 로깅(딕셔너리 형태)을 사용하면, 클라이언트 측에서 로그를 파싱하여 대시보드에 표시하거나
+          특정 필드를 기준으로 필터링하는 등의 고급 처리가 가능하다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 12.3 진행률 보고 -->
+    <section>
+      <h2 id="progress-reporting">12.3 진행률 보고</h2>
+      <p>
+        오래 걸리는 작업의 경우 <code>report_progress</code> 메서드를 사용하여
+        클라이언트에게 현재 진행 상황을 실시간으로 알릴 수 있다.
+        이를 통해 사용자 경험을 크게 향상시킬 수 있다.
+      </p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python">from mcp.server.fastmcp import FastMCP, Context
+
+mcp = FastMCP("Progress Example")
+
+@mcp.tool()
+async def batch_process(ctx: Context, items: list[str]) -> str:
+    """배치 처리"""
+    results = []
+    for i, item in enumerate(items):
+        # 진행률을 클라이언트에 보고 (현재/전체)
+        await ctx.report_progress(i + 1, len(items))
+        await ctx.info(f"처리 중: {item}")
+        results.append(item.upper())
+    return ", ".join(results)</code></pre>
+      </div>
+
+      <p>
+        <code>report_progress(current, total)</code>는 두 개의 인자를 받는다.
+        <code>current</code>는 현재까지 처리된 수, <code>total</code>은 전체 항목 수다.
+        클라이언트는 이 정보를 프로그레스 바 등으로 시각화할 수 있다.
+      </p>
+
+      <div class="info-box info-box--warning">
+        <div class="info-box__title">WARNING</div>
+        <p>
+          진행률 보고는 클라이언트가 <code>progressToken</code>을 요청에 포함했을 때만 실제로 전송된다.
+          클라이언트가 토큰을 제공하지 않으면 <code>report_progress</code>는 아무 동작도 하지 않는다.
+        </p>
+      </div>
+
+      <p>좀 더 실용적인 예제로, 파일 목록을 처리하면서 진행률과 로깅을 함께 활용하는 패턴을 살펴보자.</p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python">import asyncio
+from mcp.server.fastmcp import FastMCP, Context
+
+mcp = FastMCP("File Processor")
+
+@mcp.tool()
+async def process_files(ctx: Context, file_paths: list[str]) -> str:
+    """여러 파일을 비동기로 처리한다"""
+    total = len(file_paths)
+    await ctx.info(f"총 {total}개 파일 처리 시작")
+
+    processed = 0
+    errors = []
+
+    for i, path in enumerate(file_paths):
+        try:
+            await ctx.debug(f"파일 열기: {path}")
+            # 실제 파일 처리 로직 (여기서는 시뮬레이션)
+            await asyncio.sleep(0.1)
+            processed += 1
+            await ctx.info(f"완료: {path}")
+        except Exception as e:
+            errors.append({"file": path, "error": str(e)})
+            await ctx.error(f"실패: {path} - {e}")
+        finally:
+            await ctx.report_progress(i + 1, total)
+
+    # 최종 결과 요약 로깅
+    await ctx.info({
+        "action": "batch_complete",
+        "processed": processed,
+        "errors": len(errors),
+        "total": total,
+    })
+
+    return f"처리 완료: {processed}/{total} 성공, {len(errors)} 실패"</code></pre>
+      </div>
+    </section>
+
+    <!-- 12.4 Low-Level: ServerRequestContext -->
+    <section>
+      <h2 id="low-level-context">12.4 Low-Level: ServerRequestContext</h2>
+      <p>
+        FastMCP를 사용하지 않고 저수준 API로 MCP 서버를 구성하는 경우,
+        <code>ServerRequestContext</code>를 직접 사용하여 세션에 접근하고 로그 메시지를 전송한다.
+      </p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python">from mcp.server import Server
+from mcp.server.lowlevel.server import request_ctx
+from mcp.types import (
+    CallToolRequestParams,
+    CallToolResult,
+    TextContent,
+    Tool,
+)
+
+server = Server("low-level-example")
+
+@server.call_tool()
+async def handle_tool(name: str, arguments: dict) -> list[TextContent]:
+    """저수준 도구 핸들러"""
+    # request_ctx를 통해 현재 요청 컨텍스트에 접근
+    ctx = request_ctx.get()
+
+    # 세션을 통해 로그 메시지 전송
+    await ctx.session.send_log_message(
+        level="info",
+        data="도구 처리 시작",
+    )
+
+    if name == "greet":
+        user = arguments.get("name", "세계")
+        await ctx.session.send_log_message(
+            level="debug",
+            data=f"인사 대상: {user}",
+        )
+        return [TextContent(type="text", text=f"안녕하세요, {user}님!")]
+
+    await ctx.session.send_log_message(
+        level="error",
+        data=f"알 수 없는 도구: {name}",
+    )
+    return [TextContent(type="text", text=f"알 수 없는 도구: {name}")]
+
+@server.list_tools()
+async def list_tools() -> list[Tool]:
+    return [
+        Tool(
+            name="greet",
+            description="인사한다",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "이름"},
+                },
+                "required": ["name"],
+            },
+        )
+    ]</code></pre>
+      </div>
+
+      <div class="info-box info-box--info">
+        <div class="info-box__title">INFO</div>
+        <p>
+          저수준 API에서는 <code>request_ctx</code> 컨텍스트 변수를 통해 현재 요청의 컨텍스트에 접근한다.
+          FastMCP의 <code>Context</code>가 내부적으로 이 메커니즘을 래핑하고 있으므로,
+          일반적인 경우 FastMCP의 <code>Context</code>를 사용하는 것이 더 간결하다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 12.5 HTTP 헤더 접근 -->
+    <section>
+      <h2 id="http-headers">12.5 HTTP 헤더 접근</h2>
+      <p>
+        Streamable HTTP 전송을 사용할 때, <code>Context</code> 객체를 통해 원본 HTTP 요청의 헤더에 접근할 수 있다.
+        이를 통해 인증 토큰 검증, 클라이언트 식별 등의 작업을 수행할 수 있다.
+      </p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python">import json
+from mcp.server.fastmcp import FastMCP, Context
+
+mcp = FastMCP("Header Example")
+
+@mcp.tool()
+async def echo_headers(ctx: Context) -> str:
+    """요청 헤더를 반환한다"""
+    # ctx.request는 Starlette Request 객체
+    if ctx.request:
+        headers = dict(ctx.request.headers)
+        return json.dumps(headers, indent=2, ensure_ascii=False)
+    return "헤더 정보 없음 (stdio transport)"
+
+@mcp.tool()
+async def check_auth(ctx: Context) -> str:
+    """인증 토큰을 확인한다"""
+    if not ctx.request:
+        return "HTTP 요청이 아님 (stdio transport)"
+
+    auth_header = ctx.request.headers.get("authorization", "")
+    if not auth_header.startswith("Bearer "):
+        await ctx.warning("인증 토큰이 없거나 형식이 잘못됨")
+        return "인증 실패: 토큰 없음"
+
+    token = auth_header[7:]  # "Bearer " 이후의 문자열
+    await ctx.info(f"토큰 확인됨: {token[:8]}...")
+
+    # 실제로는 여기서 토큰 검증 로직을 수행한다
+    return f"인증 성공 (토큰: {token[:8]}...)"</code></pre>
+      </div>
+
+      <div class="info-box info-box--warning">
+        <div class="info-box__title">WARNING</div>
+        <p>
+          <code>ctx.request</code>는 Streamable HTTP 전송에서만 사용할 수 있다.
+          stdio 전송을 사용하는 경우 <code>ctx.request</code>는 <code>None</code>이므로,
+          반드시 <code>None</code> 체크를 한 후 접근해야 한다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 12.6 로그 레벨 -->
+    <section>
+      <h2 id="log-levels">12.6 로그 레벨</h2>
+      <p>
+        MCP 프로토콜은 <a href="https://datatracker.ietf.org/doc/html/rfc5424" target="_blank">RFC 5424 (Syslog)</a>에 기반한
+        8가지 로그 레벨을 정의한다. 각 레벨은 심각도에 따라 정렬되어 있다.
+      </p>
+
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>레벨</th>
+            <th>심각도</th>
+            <th>설명</th>
+            <th>사용 예시</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>emergency</code></td>
+            <td>0 (최고)</td>
+            <td>시스템 사용 불가</td>
+            <td>서버 완전 중단</td>
+          </tr>
+          <tr>
+            <td><code>alert</code></td>
+            <td>1</td>
+            <td>즉각 조치 필요</td>
+            <td>데이터베이스 연결 끊김</td>
+          </tr>
+          <tr>
+            <td><code>critical</code></td>
+            <td>2</td>
+            <td>심각한 상태</td>
+            <td>디스크 공간 부족</td>
+          </tr>
+          <tr>
+            <td><code>error</code></td>
+            <td>3</td>
+            <td>에러 발생</td>
+            <td>파일 읽기 실패, API 호출 실패</td>
+          </tr>
+          <tr>
+            <td><code>warning</code></td>
+            <td>4</td>
+            <td>경고 상황</td>
+            <td>더 이상 사용되지 않는 API 호출</td>
+          </tr>
+          <tr>
+            <td><code>notice</code></td>
+            <td>5</td>
+            <td>정상이지만 중요한 이벤트</td>
+            <td>설정 변경 감지</td>
+          </tr>
+          <tr>
+            <td><code>info</code></td>
+            <td>6</td>
+            <td>정보성 메시지</td>
+            <td>작업 시작/완료, 처리 현황</td>
+          </tr>
+          <tr>
+            <td><code>debug</code></td>
+            <td>7 (최저)</td>
+            <td>디버깅용 상세 정보</td>
+            <td>변수 값, 내부 상태 추적</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <p>
+        FastMCP의 <code>Context</code>는 <code>debug</code>, <code>info</code>, <code>warning</code>, <code>error</code>
+        4가지 편의 메서드를 제공한다. 나머지 레벨은 저수준 API의 <code>send_log_message</code>를 통해 사용할 수 있다.
+      </p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python">from mcp.server.fastmcp import FastMCP, Context
+
+mcp = FastMCP("Log Level Demo")
+
+@mcp.tool()
+async def demonstrate_levels(ctx: Context) -> str:
+    """모든 로그 레벨을 시연한다"""
+    # FastMCP Context의 편의 메서드 (4가지)
+    await ctx.debug("디버그: 내부 변수 값 확인")
+    await ctx.info("정보: 작업이 정상적으로 시작됨")
+    await ctx.warning("경고: 메모리 사용량이 80%를 초과함")
+    await ctx.error("에러: 외부 API 호출 실패")
+
+    # 저수준 API로 다른 레벨 사용
+    session = ctx.session
+    if session:
+        await session.send_log_message(
+            level="notice",
+            data="알림: 설정 파일이 변경됨",
+        )
+        await session.send_log_message(
+            level="critical",
+            data="심각: 핵심 서비스 응답 없음",
+        )
+
+    return "로그 레벨 시연 완료"</code></pre>
+      </div>
+
+      <div class="info-box info-box--tip">
+        <div class="info-box__title">TIP</div>
+        <p>
+          클라이언트는 <code>logging/setLevel</code> 요청을 통해 서버에게 특정 레벨 이상의 로그만 보내도록 요청할 수 있다.
+          예를 들어, 클라이언트가 <code>warning</code> 레벨을 설정하면 <code>warning</code>, <code>error</code>,
+          <code>critical</code>, <code>alert</code>, <code>emergency</code> 로그만 전송된다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 12.7 실전 예제: 요청 추적 서버 -->
+    <section>
+      <h2 id="practical-example">12.7 실전 예제: 요청 추적 서버</h2>
+      <p>
+        모든 도구 호출에 대해 고유한 요청 ID를 부여하고, 처리 시간을 측정하여 로깅하는
+        MCP 서버를 구현해 보자. 이 패턴은 운영 환경에서 디버깅과 모니터링에 매우 유용하다.
+      </p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python">import time
+import uuid
+import asyncio
+from mcp.server.fastmcp import FastMCP, Context
+
+mcp = FastMCP("Request Tracker")
+
+# 요청 통계를 저장하는 딕셔너리
+request_stats: dict[str, dict] = {}
+
+
+async def track_request(ctx: Context, tool_name: str):
+    """요청 추적을 시작한다. 요청 ID와 시작 시간을 기록한다."""
+    request_id = str(uuid.uuid4())[:8]
+    start_time = time.time()
+
+    await ctx.info({
+        "event": "request_start",
+        "request_id": request_id,
+        "tool": tool_name,
+        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+    })
+
+    return request_id, start_time
+
+
+async def finish_request(
+    ctx: Context,
+    request_id: str,
+    tool_name: str,
+    start_time: float,
+    success: bool = True,
+):
+    """요청 추적을 종료한다. 처리 시간을 계산하고 기록한다."""
+    elapsed = time.time() - start_time
+
+    # 통계 업데이트
+    if tool_name not in request_stats:
+        request_stats[tool_name] = {
+            "total_calls": 0,
+            "total_time": 0.0,
+            "errors": 0,
+        }
+    stats = request_stats[tool_name]
+    stats["total_calls"] += 1
+    stats["total_time"] += elapsed
+    if not success:
+        stats["errors"] += 1
+
+    log_level = "info" if success else "error"
+    log_method = getattr(ctx, log_level)
+    await log_method({
+        "event": "request_end",
+        "request_id": request_id,
+        "tool": tool_name,
+        "elapsed_ms": round(elapsed * 1000, 2),
+        "success": success,
+    })
+
+
+@mcp.tool()
+async def search_database(ctx: Context, query: str) -> str:
+    """데이터베이스를 검색한다"""
+    request_id, start_time = await track_request(ctx, "search_database")
+
+    try:
+        await ctx.report_progress(1, 3)
+        await ctx.debug(f"쿼리 파싱: {query}")
+
+        await ctx.report_progress(2, 3)
+        await ctx.info("데이터베이스 검색 실행 중...")
+        # 실제 DB 검색을 시뮬레이션
+        await asyncio.sleep(0.2)
+
+        results = [
+            {"id": 1, "title": f"{query} 관련 문서 1"},
+            {"id": 2, "title": f"{query} 관련 문서 2"},
+        ]
+
+        await ctx.report_progress(3, 3)
+        await finish_request(ctx, request_id, "search_database", start_time)
+        return str(results)
+
+    except Exception as e:
+        await ctx.error(f"검색 실패: {e}")
+        await finish_request(
+            ctx, request_id, "search_database", start_time, success=False
+        )
+        return f"검색 오류: {e}"
+
+
+@mcp.tool()
+async def transform_data(
+    ctx: Context, data: str, operation: str
+) -> str:
+    """데이터를 변환한다"""
+    request_id, start_time = await track_request(ctx, "transform_data")
+
+    operations = {
+        "upper": str.upper,
+        "lower": str.lower,
+        "reverse": lambda s: s[::-1],
+        "strip": str.strip,
+    }
+
+    try:
+        if operation not in operations:
+            await ctx.warning(f"지원하지 않는 연산: {operation}")
+            await finish_request(
+                ctx, request_id, "transform_data", start_time, success=False
+            )
+            return f"지원하지 않는 연산: {operation}. 가능한 연산: {list(operations.keys())}"
+
+        result = operations[operation](data)
+        await ctx.info(f"변환 완료: {operation}")
+        await finish_request(ctx, request_id, "transform_data", start_time)
+        return result
+
+    except Exception as e:
+        await ctx.error(f"변환 실패: {e}")
+        await finish_request(
+            ctx, request_id, "transform_data", start_time, success=False
+        )
+        return f"변환 오류: {e}"
+
+
+@mcp.tool()
+async def get_stats(ctx: Context) -> str:
+    """도구별 호출 통계를 반환한다"""
+    request_id, start_time = await track_request(ctx, "get_stats")
+
+    if not request_stats:
+        await ctx.info("아직 기록된 통계가 없다")
+        await finish_request(ctx, request_id, "get_stats", start_time)
+        return "기록된 통계 없음"
+
+    report_lines = ["=== 도구 호출 통계 ===\n"]
+    for tool_name, stats in request_stats.items():
+        avg_time = stats["total_time"] / stats["total_calls"] * 1000
+        report_lines.append(
+            f"[{tool_name}]\n"
+            f"  총 호출: {stats['total_calls']}회\n"
+            f"  평균 응답: {avg_time:.2f}ms\n"
+            f"  에러: {stats['errors']}회\n"
+        )
+
+    report = "\n".join(report_lines)
+    await ctx.info({"event": "stats_report", "tools": list(request_stats.keys())})
+    await finish_request(ctx, request_id, "get_stats", start_time)
+    return report
+
+
+if __name__ == "__main__":
+    mcp.run(transport="streamable-http")</code></pre>
+      </div>
+
+      <p>이 서버를 실행하고 클라이언트로 도구를 호출하면 다음과 같은 흐름이 된다.</p>
+
+      <div class="diagram">
+클라이언트                         서버
+   │                               │
+   │  call_tool("search_database") │
+   │──────────────────────────────▶│
+   │                               │── 요청 ID 생성: "a1b2c3d4"
+   │  log: request_start           │
+   │◀──────────────────────────────│
+   │  progress: 1/3                │
+   │◀──────────────────────────────│
+   │  log: "쿼리 파싱..."          │
+   │◀──────────────────────────────│
+   │  progress: 2/3                │
+   │◀──────────────────────────────│
+   │  log: "DB 검색 실행 중..."     │
+   │◀──────────────────────────────│
+   │  progress: 3/3                │
+   │◀──────────────────────────────│
+   │  log: request_end (150ms)     │
+   │◀──────────────────────────────│
+   │  result: [검색 결과]           │
+   │◀──────────────────────────────│
+      </div>
+
+      <div class="info-box info-box--tip">
+        <div class="info-box__title">TIP</div>
+        <p>
+          운영 환경에서는 요청 추적 정보를 외부 모니터링 시스템(예: Prometheus, Datadog)으로도 전송하면
+          MCP 서버의 성능과 안정성을 종합적으로 모니터링할 수 있다.
+          <code>request_stats</code>를 메모리 대신 Redis 등에 저장하면 서버 재시작 시에도 통계가 유지된다.
+        </p>
+      </div>
+    </section>
+
+    <nav class="page-nav"></nav>
+  </main>
+</div>
+
+<script src="../js/nav.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-json.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.js"></script>
+</body>
+</html>

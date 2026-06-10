@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>조건부 라우팅 - AI Agent 개발 튜토리얼</title>
+  <link rel="stylesheet" href="../css/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.css">
+</head>
+<body>
+
+<header class="site-header">
+  <button class="hamburger" aria-label="메뉴">
+    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+  </button>
+  <a href="../index.html" class="site-header__title"><span>AI Agent</span> 개발 튜토리얼</a>
+</header>
+
+<div class="layout">
+  <nav class="sidebar"></nav>
+  <main class="main">
+    <span class="chapter-badge chapter-badge--lg-basic">기본 과정</span>
+    <h1>조건부 라우팅</h1>
+    <p class="chapter-subtitle">그래프의 흐름을 조건에 따라 동적으로 분기한다</p>
+
+    <!-- 1. 조건부 라우팅이란? -->
+    <section>
+      <h2>조건부 라우팅이란?</h2>
+      <p>
+        지금까지 우리가 만든 그래프는 노드 A에서 노드 B로, 노드 B에서 노드 C로 이어지는 <strong>고정된 경로</strong>를 따랐다.
+        하지만 실제 에이전트는 상황에 따라 다른 행동을 해야 한다.
+        사용자가 "날씨 알려줘"라고 하면 날씨 API를 호출하고, "3 + 5 계산해줘"라고 하면 계산기를 실행해야 한다.
+      </p>
+      <p>
+        <strong>조건부 라우팅(Conditional Routing)</strong>은 노드의 실행 결과에 따라 <strong>다음에 실행할 노드를 동적으로 결정</strong>하는 메커니즘이다.
+        이것이 바로 에이전트가 "생각하고 판단"하는 핵심 기능이다.
+      </p>
+      <div class="info-box info-box--tip">
+        <div class="info-box__title">TIP</div>
+        <p>
+          조건부 라우팅은 프로그래밍에서 <code>if-else</code> 문과 유사하다.
+          다만 LangGraph에서는 이를 <strong>그래프의 엣지(edge)</strong>로 표현하여,
+          전체 워크플로우를 시각적으로 파악할 수 있다는 장점이 있다.
+        </p>
+      </div>
+      <p>
+        일반 엣지(<code>add_edge</code>)는 항상 같은 노드로 이동하지만,
+        조건부 엣지(<code>add_conditional_edges</code>)는 <strong>라우팅 함수</strong>의 반환값에 따라
+        여러 노드 중 하나로 이동한다.
+      </p>
+    </section>
+
+    <!-- 2. add_conditional_edges 기본 -->
+    <section>
+      <h2>add_conditional_edges 기본</h2>
+      <p>
+        <code>add_conditional_edges</code> 메서드는 세 가지 인자를 받는다:
+      </p>
+      <ul>
+        <li><strong>출발 노드</strong>: 어떤 노드에서 분기할 것인지</li>
+        <li><strong>라우팅 함수</strong>: State를 받아 다음 노드를 결정하는 함수</li>
+        <li><strong>매핑 딕셔너리</strong>: 라우팅 함수의 반환값을 실제 노드 이름에 매핑</li>
+      </ul>
+      <p>
+        아래는 사용자의 질문을 카테고리별로 분류하고, 각각 다른 핸들러 노드로 분기하는 기본 예제이다.
+      </p>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python">from langgraph.graph import StateGraph, START, END
+from typing_extensions import TypedDict
+
+
+# 1. 상태 정의
+class State(TypedDict):
+    query: str       # 사용자 질문
+    category: str    # 분류된 카테고리
+    result: str      # 처리 결과
+
+
+# 2. 분류 노드 — 질문을 분석하여 카테고리를 결정한다
+def classify(state: State) -> dict:
+    query = state["query"]
+    if "날씨" in query:
+        return {"category": "weather"}
+    elif "계산" in query:
+        return {"category": "math"}
+    return {"category": "general"}
+
+
+# 3. 카테고리별 처리 노드
+def handle_weather(state: State) -> dict:
+    return {"result": f"날씨 정보: {state['query']}에 대한 답변"}
+
+
+def handle_math(state: State) -> dict:
+    return {"result": f"계산 결과: {state['query']}에 대한 답변"}
+
+
+def handle_general(state: State) -> dict:
+    return {"result": f"일반 답변: {state['query']}에 대한 답변"}
+
+
+# 4. 라우팅 함수 — 카테고리 값을 반환한다
+def route_query(state: State) -> str:
+    return state["category"]
+
+
+# 5. 그래프 구축
+graph = StateGraph(State)
+
+# 노드 추가
+graph.add_node("classify", classify)
+graph.add_node("weather", handle_weather)
+graph.add_node("math", handle_math)
+graph.add_node("general", handle_general)
+
+# 엣지 연결
+graph.add_edge(START, "classify")
+
+# 조건부 엣지: classify 노드 이후 route_query 함수로 분기
+graph.add_conditional_edges("classify", route_query, {
+    "weather": "weather",
+    "math": "math",
+    "general": "general",
+})
+
+# 모든 핸들러는 END로
+graph.add_edge("weather", END)
+graph.add_edge("math", END)
+graph.add_edge("general", END)
+
+# 6. 컴파일 및 실행
+app = graph.compile()
+
+# 테스트
+result = app.invoke({"query": "서울 날씨 어때?"})
+print(result)
+# {'query': '서울 날씨 어때?', 'category': 'weather', 'result': '날씨 정보: 서울 날씨 어때?에 대한 답변'}
+
+result = app.invoke({"query": "100 + 200 계산해줘"})
+print(result)
+# {'query': '100 + 200 계산해줘', 'category': 'math', 'result': '계산 결과: 100 + 200 계산해줘에 대한 답변'}</code></pre>
+      </div>
+      <p>
+        위 코드에서 핵심은 <code>add_conditional_edges</code> 호출 부분이다.
+        <code>classify</code> 노드가 실행된 후, <code>route_query</code> 함수가 State에서 <code>category</code>를 읽어
+        <code>"weather"</code>, <code>"math"</code>, <code>"general"</code> 중 하나를 반환한다.
+        반환값은 매핑 딕셔너리를 통해 실제 노드 이름으로 변환된다.
+      </p>
+    </section>
+
+    <!-- 3. 라우팅 함수 작성법 -->
+    <section>
+      <h2>라우팅 함수 작성법</h2>
+      <p>
+        라우팅 함수는 다음 규칙을 따라야 한다:
+      </p>
+      <ul>
+        <li><strong>입력</strong>: 현재 State를 받는다</li>
+        <li><strong>출력</strong>: 문자열(다음 노드 이름)을 반환한다</li>
+        <li><code>END</code>를 반환하면 그래프가 즉시 종료된다</li>
+      </ul>
+
+      <h3>단순 조건 분기</h3>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python">from langgraph.graph import END
+
+# 단순한 이진 분기
+def should_continue(state: State) -> str:
+    """작업을 계속할지 종료할지 판단한다."""
+    if state["is_complete"]:
+        return END       # END를 반환하면 그래프 종료
+    return "next_step"   # 다음 노드로 진행</code></pre>
+      </div>
+
+      <h3>다중 조건 분기</h3>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python"># 여러 조건에 따라 분기
+def route_by_priority(state: State) -> str:
+    """우선순위에 따라 처리 경로를 결정한다."""
+    priority = state["priority"]
+    if priority == "urgent":
+        return "fast_track"
+    elif priority == "normal":
+        return "standard"
+    elif priority == "low":
+        return "batch"
+    return END  # 알 수 없는 우선순위면 종료</code></pre>
+      </div>
+
+      <h3>복잡한 로직 기반 분기</h3>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python"># 여러 State 필드를 조합하여 판단
+def route_complex(state: State) -> str:
+    """여러 조건을 복합적으로 평가하여 경로를 결정한다."""
+    score = state["score"]
+    has_errors = state["error_count"] > 0
+    attempts = state["attempts"]
+
+    # 에러가 있고 재시도 횟수가 남아 있으면 재시도
+    if has_errors and attempts < 3:
+        return "retry"
+    # 점수가 충분히 높으면 승인
+    elif score >= 80:
+        return "approve"
+    # 점수가 낮으면 검토 요청
+    elif score < 50:
+        return "review"
+    # 그 외에는 수동 확인
+    else:
+        return "manual_check"</code></pre>
+      </div>
+
+      <div class="info-box info-box--tip">
+        <div class="info-box__title">TIP</div>
+        <p>
+          라우팅 함수는 순수 함수(pure function)로 작성하는 것이 좋다.
+          즉, State를 읽기만 하고 수정하지 않는다.
+          State 수정은 노드 함수에서 담당하고, 라우팅 함수는 방향 결정만 한다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 4. 다이어그램으로 시각화 -->
+    <section>
+      <h2>다이어그램으로 시각화</h2>
+      <p>
+        조건부 라우팅이 적용된 그래프의 흐름을 시각화하면 다음과 같다.
+        <code>classify</code> 노드에서 세 개의 화살표가 갈라지는 것을 확인할 수 있다.
+      </p>
+      <div class="diagram">
+┌───────┐
+│ START │
+└───┬───┘
+    │
+    ▼
+┌──────────┐
+│ classify │ ← 질문을 분석하여 카테고리 결정
+└────┬─────┘
+     │
+     ├─── category="weather" ──→ ┌─────────┐ ──→ ┌─────┐
+     │                           │ weather │     │ END │
+     │                           └─────────┘     └─────┘
+     │
+     ├─── category="math" ─────→ ┌──────┐ ─────→ ┌─────┐
+     │                           │ math │        │ END │
+     │                           └──────┘        └─────┘
+     │
+     └─── category="general" ──→ ┌─────────┐ ──→ ┌─────┐
+                                 │ general │     │ END │
+                                 └─────────┘     └─────┘
+      </div>
+      <p>
+        이 다이어그램에서 핵심은 <code>classify</code> 노드에서 나오는 <strong>점선 화살표</strong>(조건부 엣지)이다.
+        일반 엣지와 달리, 조건부 엣지는 런타임에 어느 방향으로 갈지 결정된다.
+      </p>
+      <div class="info-box info-box--tip">
+        <div class="info-box__title">TIP</div>
+        <p>
+          LangGraph는 <code>app.get_graph().draw_mermaid_png()</code> 메서드로 Mermaid 기반의 시각적 그래프를 생성할 수 있다.
+          Jupyter Notebook에서 특히 유용하다.
+        </p>
+      </div>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python"># Jupyter Notebook에서 그래프 시각화
+from IPython.display import Image, display
+
+display(Image(app.get_graph().draw_mermaid_png()))</code></pre>
+      </div>
+    </section>
+
+    <!-- 5. 루프 패턴 -->
+    <section>
+      <h2>루프 패턴</h2>
+      <p>
+        조건부 라우팅의 강력한 활용법 중 하나는 <strong>루프(loop)</strong>이다.
+        루프를 사용하면 결과가 만족스럽지 않을 때 이전 단계로 돌아가 다시 실행할 수 있다.
+        에이전트의 "반복 개선" 능력은 이 패턴으로 구현한다.
+      </p>
+
+      <h3>루프의 핵심 구조</h3>
+      <p>
+        루프는 두 가지 요소로 구성된다:
+      </p>
+      <ul>
+        <li><strong>작업 노드</strong>: 실제 작업을 수행하는 노드 (예: 텍스트 생성, 코드 작성)</li>
+        <li><strong>평가 노드</strong>: 작업 결과를 평가하고, 재시도 여부를 결정하는 노드</li>
+      </ul>
+
+      <div class="diagram">
+┌───────┐     ┌──────────┐     ┌──────────┐
+│ START │ ──→ │ generate │ ──→ │ evaluate │
+└───────┘     └──────────┘     └─────┬────┘
+                   ▲                 │
+                   │    quality &lt; 0.8 │
+                   │    &amp; attempts &lt; 3│
+                   └─── "retry" ─────┘
+                                     │
+                            quality ≥ 0.8
+                            또는 attempts ≥ 3
+                                     │
+                                     ▼
+                                 ┌─────┐
+                                 │ END │
+                                 └─────┘
+      </div>
+
+      <h3>완성된 루프 예제</h3>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python">import random
+from langgraph.graph import StateGraph, START, END
+from typing_extensions import TypedDict
+
+
+class LoopState(TypedDict):
+    topic: str        # 작성할 주제
+    draft: str        # 현재 초안
+    quality: float    # 품질 점수 (0.0 ~ 1.0)
+    attempts: int     # 시도 횟수
+    feedback: str     # 피드백 메시지
+
+
+def generate(state: LoopState) -> dict:
+    """초안을 생성하거나 피드백을 반영하여 개선한다."""
+    attempts = state.get("attempts", 0) + 1
+    feedback = state.get("feedback", "")
+
+    if attempts == 1:
+        # 첫 번째 시도: 초안 생성
+        draft = f"'{state['topic']}'에 대한 초안 (버전 {attempts})"
+    else:
+        # 재시도: 피드백을 반영하여 개선
+        draft = f"'{state['topic']}'에 대한 개선된 초안 (버전 {attempts}, 피드백 반영: {feedback})"
+
+    return {"draft": draft, "attempts": attempts}
+
+
+def evaluate(state: LoopState) -> dict:
+    """초안의 품질을 평가한다."""
+    # 실제로는 LLM이나 규칙 기반으로 평가
+    # 여기서는 시도 횟수에 따라 품질이 올라가는 시뮬레이션
+    base_quality = 0.3 + (state["attempts"] * 0.25)
+    quality = min(base_quality + random.uniform(-0.1, 0.1), 1.0)
+
+    if quality < 0.8:
+        feedback = "구체적인 예시를 추가하고, 논리 흐름을 개선해야 한다."
+    else:
+        feedback = "좋은 품질이다. 최종 승인."
+
+    return {"quality": round(quality, 2), "feedback": feedback}
+
+
+def should_continue(state: LoopState) -> str:
+    """계속 반복할지 종료할지 결정한다."""
+    # 품질이 충분히 높거나, 최대 시도 횟수에 도달하면 종료
+    if state["quality"] >= 0.8:
+        return "end"
+    if state["attempts"] >= 3:
+        return "end"
+    return "retry"
+
+
+# 그래프 구축
+graph = StateGraph(LoopState)
+
+graph.add_node("generate", generate)
+graph.add_node("evaluate", evaluate)
+
+graph.add_edge(START, "generate")
+graph.add_edge("generate", "evaluate")
+
+# 루프를 만드는 핵심: evaluate → generate로 돌아가는 조건부 엣지
+graph.add_conditional_edges("evaluate", should_continue, {
+    "retry": "generate",   # 다시 generate로 돌아간다
+    "end": END,
+})
+
+app = graph.compile()
+
+# 실행
+result = app.invoke({"topic": "AI의 미래"})
+print(f"최종 초안: {result['draft']}")
+print(f"품질 점수: {result['quality']}")
+print(f"총 시도 횟수: {result['attempts']}")</code></pre>
+      </div>
+
+      <div class="info-box info-box--tip">
+        <div class="info-box__title">TIP</div>
+        <p>
+          <strong>무한 루프 방지는 필수이다.</strong>
+          항상 최대 시도 횟수(<code>attempts &gt;= N</code>)를 체크하여 루프를 빠져나올 수 있도록 해야 한다.
+          LangGraph에도 <code>recursion_limit</code> 설정이 있어 안전장치로 사용할 수 있다.
+        </p>
+      </div>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python"># recursion_limit으로 추가 안전장치 설정
+app = graph.compile()
+
+# 최대 25번까지만 노드 실행 허용 (기본값은 25)
+result = app.invoke(
+    {"topic": "AI의 미래"},
+    {"recursion_limit": 10}  # 더 낮게 설정하여 빠르게 종료
+)</code></pre>
+      </div>
+    </section>
+
+    <!-- 6. 실전 예제: 질문 분류 및 처리 시스템 -->
+    <section>
+      <h2>실전 예제: 질문 분류 및 처리 시스템</h2>
+      <p>
+        이 예제에서는 사용자의 질문을 여러 카테고리로 분류하고,
+        각 카테고리에 맞는 처리 로직을 실행하는 완성된 시스템을 구축한다.
+        분류 실패 시 fallback 처리도 포함한다.
+      </p>
+
+      <h3>시스템 아키텍처</h3>
+      <div class="diagram">
+┌───────┐
+│ START │
+└───┬───┘
+    ▼
+┌──────────┐
+│ classify │ ← 키워드 기반 분류
+└────┬─────┘
+     │
+     ├── "tech"      → ┌──────────────┐ → ┌──────────┐ → ┌─────┐
+     │                 │ handle_tech  │   │ finalize │   │ END │
+     │                 └──────────────┘   └──────────┘   └─────┘
+     │
+     ├── "business"  → ┌──────────────────┐ → ┌──────────┐ → ┌─────┐
+     │                 │ handle_business  │   │ finalize │   │ END │
+     │                 └──────────────────┘   └──────────┘   └─────┘
+     │
+     ├── "creative"  → ┌──────────────────┐ → ┌──────────┐ → ┌─────┐
+     │                 │ handle_creative  │   │ finalize │   │ END │
+     │                 └──────────────────┘   └──────────┘   └─────┘
+     │
+     └── "fallback"  → ┌──────────────────┐ → ┌──────────┐ → ┌─────┐
+                       │ handle_fallback  │   │ finalize │   │ END │
+                       └──────────────────┘   └──────────┘   └─────┘
+      </div>
+
+      <h3>완성 코드</h3>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python">from langgraph.graph import StateGraph, START, END
+from typing_extensions import TypedDict
+from datetime import datetime
+
+
+class QAState(TypedDict):
+    query: str           # 사용자 질문
+    category: str        # 분류 결과
+    confidence: float    # 분류 신뢰도
+    result: str          # 처리 결과
+    metadata: dict       # 메타데이터 (처리 시간, 카테고리 등)
+
+
+# ─── 분류 노드 ───
+CATEGORY_KEYWORDS = {
+    "tech": ["프로그래밍", "코드", "파이썬", "자바", "API", "서버", "데이터베이스",
+             "알고리즘", "버그", "에러", "개발", "프레임워크"],
+    "business": ["매출", "수익", "마케팅", "전략", "투자", "시장", "경쟁",
+                 "고객", "브랜드", "스타트업", "사업"],
+    "creative": ["글쓰기", "디자인", "그림", "음악", "소설", "시", "예술",
+                 "창작", "아이디어", "스토리", "브레인스토밍"],
+}
+
+def classify(state: QAState) -> dict:
+    """질문을 분석하여 가장 적합한 카테고리로 분류한다."""
+    query = state["query"].lower()
+    scores = {}
+
+    for category, keywords in CATEGORY_KEYWORDS.items():
+        # 각 카테고리별 키워드 매칭 점수 계산
+        score = sum(1 for kw in keywords if kw in query)
+        if score > 0:
+            scores[category] = score
+
+    if scores:
+        # 가장 높은 점수의 카테고리 선택
+        best_category = max(scores, key=scores.get)
+        confidence = min(scores[best_category] / 3, 1.0)  # 최대 1.0
+        return {"category": best_category, "confidence": round(confidence, 2)}
+
+    # 어떤 키워드에도 매칭되지 않으면 fallback
+    return {"category": "fallback", "confidence": 0.0}
+
+
+# ─── 카테고리별 처리 노드 ───
+def handle_tech(state: QAState) -> dict:
+    """기술 관련 질문을 처리한다."""
+    query = state["query"]
+    result = (
+        f"[기술 전문가 모드]\n"
+        f"질문: {query}\n\n"
+        f"기술적 분석:\n"
+        f"- 관련 문서와 레퍼런스를 검색했다.\n"
+        f"- 코드 예제와 함께 답변을 구성했다.\n"
+        f"- 최신 버전 기준으로 정보를 제공한다."
+    )
+    return {"result": result}
+
+
+def handle_business(state: QAState) -> dict:
+    """비즈니스 관련 질문을 처리한다."""
+    query = state["query"]
+    result = (
+        f"[비즈니스 분석가 모드]\n"
+        f"질문: {query}\n\n"
+        f"비즈니스 분석:\n"
+        f"- 시장 동향과 데이터를 기반으로 분석했다.\n"
+        f"- 실행 가능한 전략을 제안한다.\n"
+        f"- 리스크 요인도 함께 고려했다."
+    )
+    return {"result": result}
+
+
+def handle_creative(state: QAState) -> dict:
+    """창작 관련 질문을 처리한다."""
+    query = state["query"]
+    result = (
+        f"[크리에이티브 어시스턴트 모드]\n"
+        f"질문: {query}\n\n"
+        f"창작 지원:\n"
+        f"- 다양한 관점에서 아이디어를 탐색했다.\n"
+        f"- 영감을 줄 수 있는 레퍼런스를 제공한다.\n"
+        f"- 구체적인 실행 방법도 제안한다."
+    )
+    return {"result": result}
+
+
+def handle_fallback(state: QAState) -> dict:
+    """분류할 수 없는 질문을 일반적으로 처리한다."""
+    query = state["query"]
+    result = (
+        f"[일반 어시스턴트 모드]\n"
+        f"질문: {query}\n\n"
+        f"답변:\n"
+        f"- 질문의 카테고리를 특정하기 어렵지만, 최선의 답변을 제공한다.\n"
+        f"- 더 정확한 답변을 위해 질문을 구체적으로 작성해 달라."
+    )
+    return {"result": result}
+
+
+# ─── 마무리 노드 ───
+def finalize(state: QAState) -> dict:
+    """메타데이터를 추가하고 최종 결과를 정리한다."""
+    metadata = {
+        "category": state["category"],
+        "confidence": state["confidence"],
+        "processed_at": datetime.now().isoformat(),
+    }
+    return {"metadata": metadata}
+
+
+# ─── 라우팅 함수 ───
+def route_by_category(state: QAState) -> str:
+    """분류 결과에 따라 적절한 처리 노드로 라우팅한다."""
+    return state["category"]
+
+
+# ─── 그래프 조립 ───
+graph = StateGraph(QAState)
+
+# 노드 등록
+graph.add_node("classify", classify)
+graph.add_node("tech", handle_tech)
+graph.add_node("business", handle_business)
+graph.add_node("creative", handle_creative)
+graph.add_node("fallback", handle_fallback)
+graph.add_node("finalize", finalize)
+
+# 엣지 연결
+graph.add_edge(START, "classify")
+
+# 조건부 라우팅
+graph.add_conditional_edges("classify", route_by_category, {
+    "tech": "tech",
+    "business": "business",
+    "creative": "creative",
+    "fallback": "fallback",
+})
+
+# 모든 처리 노드 → finalize → END
+graph.add_edge("tech", "finalize")
+graph.add_edge("business", "finalize")
+graph.add_edge("creative", "finalize")
+graph.add_edge("fallback", "finalize")
+graph.add_edge("finalize", END)
+
+# 컴파일
+app = graph.compile()
+
+
+# ─── 테스트 ───
+test_queries = [
+    "파이썬으로 API 서버 만드는 방법 알려줘",
+    "스타트업 마케팅 전략 추천해줘",
+    "단편 소설 아이디어 브레인스토밍 해줘",
+    "오늘 점심 뭐 먹지?",  # fallback 케이스
+]
+
+for query in test_queries:
+    result = app.invoke({"query": query})
+    print(f"\n{'='*60}")
+    print(f"질문: {query}")
+    print(f"분류: {result['category']} (신뢰도: {result['confidence']})")
+    print(f"결과:\n{result['result']}")
+    print(f"메타데이터: {result['metadata']}")</code></pre>
+      </div>
+
+      <h3>실행 결과 예시</h3>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-bash">============================================================
+질문: 파이썬으로 API 서버 만드는 방법 알려줘
+분류: tech (신뢰도: 0.67)
+결과:
+[기술 전문가 모드]
+질문: 파이썬으로 API 서버 만드는 방법 알려줘
+...
+
+============================================================
+질문: 오늘 점심 뭐 먹지?
+분류: fallback (신뢰도: 0.0)
+결과:
+[일반 어시스턴트 모드]
+질문: 오늘 점심 뭐 먹지?
+...</code></pre>
+      </div>
+
+      <div class="info-box info-box--tip">
+        <div class="info-box__title">TIP</div>
+        <p>
+          이 예제에서는 키워드 기반으로 분류했지만, 실제 프로덕션에서는
+          LLM을 사용하여 분류하는 것이 훨씬 정확하다.
+          <code>classify</code> 노드에서 LLM을 호출하고,
+          구조화된 출력(Structured Output)으로 카테고리를 받으면 된다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 7. 매핑 딕셔너리 생략 -->
+    <section>
+      <h2>매핑 딕셔너리 생략</h2>
+      <p>
+        라우팅 함수가 반환하는 값이 <strong>실제 노드 이름과 동일</strong>하다면,
+        매핑 딕셔너리를 생략할 수 있다.
+      </p>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python"># 매핑 딕셔너리 있는 버전
+graph.add_conditional_edges("classify", route_query, {
+    "weather": "weather",
+    "math": "math",
+    "general": "general",
+})
+
+# 매핑 딕셔너리 없는 버전 — 반환값이 노드 이름과 같을 때
+graph.add_conditional_edges("classify", route_query)</code></pre>
+      </div>
+      <p>
+        다만, 매핑 딕셔너리를 명시하면 <strong>가능한 경로가 코드에 드러나</strong>므로
+        가독성과 유지보수에 유리하다. 또한 그래프 시각화에서도 모든 경로가 정확히 표시된다.
+      </p>
+    </section>
+
+    <!-- 8. 핵심 정리 -->
+    <section>
+      <h2>핵심 정리</h2>
+      <ul>
+        <li><code>add_conditional_edges(출발노드, 라우팅함수, 매핑)</code>으로 조건부 분기를 구현한다.</li>
+        <li>라우팅 함수는 State를 받아 다음 노드 이름(문자열)을 반환한다.</li>
+        <li><code>END</code>를 반환하면 그래프가 즉시 종료된다.</li>
+        <li>조건부 엣지로 <strong>루프 패턴</strong>을 만들 수 있다 — 결과 평가 후 재시도.</li>
+        <li>루프에는 반드시 <strong>최대 시도 횟수</strong> 등 탈출 조건을 넣어 무한 루프를 방지한다.</li>
+        <li><code>recursion_limit</code> 설정으로 추가 안전장치를 둘 수 있다.</li>
+      </ul>
+    </section>
+
+    <nav class="page-nav"></nav>
+  </main>
+</div>
+
+<script src="../js/nav.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-json.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.js"></script>
+</body>
+</html>
