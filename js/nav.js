@@ -3,7 +3,7 @@ const courses = {
   mcp: {
     name: 'MCP',
     color: 'mcp',
-    basePath: 'chapters',
+    basePath: 'mcp',
     chapters: [
       { id: '01', title: 'MCP란 무엇인가', file: '01-what-is-mcp.html', level: 'basic' },
       { id: '02', title: '환경 설정', file: '02-environment-setup.html', level: 'basic' },
