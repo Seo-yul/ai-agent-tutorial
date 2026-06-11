@@ -37,32 +37,19 @@
         저수준 API를 사용할 때는 <code>ServerRequestContext</code>를 직접 다룬다.
       </p>
 
-      <div class="diagram">
-┌─────────────────────────────────────────────────────┐
-│                    MCP 서버                          │
-│                                                     │
-│  클라이언트 요청                                      │
-│       │                                             │
-│       ▼                                             │
-│  ┌─────────────────────────┐                        │
-│  │   Context / Request     │                        │
-│  │   Context               │                        │
-│  │                         │                        │
-│  │  • 세션 정보             │                        │
-│  │  • 로깅 메서드           │                        │
-│  │  • 진행률 보고           │                        │
-│  │  • HTTP 요청 정보        │                        │
-│  └────────┬────────────────┘                        │
-│           │                                         │
-│           ▼                                         │
-│  ┌─────────────────────────┐                        │
-│  │   도구 핸들러 함수        │                        │
-│  │   async def my_tool(    │                        │
-│  │       ctx: Context,     │                        │
-│  │       ...               │                        │
-│  │   )                     │                        │
-│  └─────────────────────────┘                        │
-└─────────────────────────────────────────────────────┘
+      <div class="mermaid-wrapper">
+<pre class="mermaid">
+graph TD
+    subgraph MCPServer ["MCP 서버"]
+        REQ["클라이언트 요청"] --> CTX["Context / RequestContext"]
+        CTX --> HANDLER["도구 핸들러 함수\nasync def my_tool(ctx: Context, ...)"]
+    end
+
+    CTX --- INFO1["세션 정보"]
+    CTX --- INFO2["로깅 메서드"]
+    CTX --- INFO3["진행률 보고"]
+    CTX --- INFO4["HTTP 요청 정보"]
+</pre>
       </div>
 
       <div class="info-box info-box--info">
@@ -609,28 +596,23 @@ if __name__ == "__main__":
 
       <p>이 서버를 실행하고 클라이언트로 도구를 호출하면 다음과 같은 흐름이 된다.</p>
 
-      <div class="diagram">
-클라이언트                         서버
-   │                               │
-   │  call_tool("search_database") │
-   │──────────────────────────────▶│
-   │                               │── 요청 ID 생성: "a1b2c3d4"
-   │  log: request_start           │
-   │◀──────────────────────────────│
-   │  progress: 1/3                │
-   │◀──────────────────────────────│
-   │  log: "쿼리 파싱..."          │
-   │◀──────────────────────────────│
-   │  progress: 2/3                │
-   │◀──────────────────────────────│
-   │  log: "DB 검색 실행 중..."     │
-   │◀──────────────────────────────│
-   │  progress: 3/3                │
-   │◀──────────────────────────────│
-   │  log: request_end (150ms)     │
-   │◀──────────────────────────────│
-   │  result: [검색 결과]           │
-   │◀──────────────────────────────│
+      <div class="mermaid-wrapper">
+<pre class="mermaid">
+sequenceDiagram
+    participant C as 클라이언트
+    participant S as 서버
+
+    C->>S: call_tool("search_database")
+    Note over S: 요청 ID 생성: "a1b2c3d4"
+    S-->>C: log: request_start
+    S-->>C: progress: 1/3
+    S-->>C: log: "쿼리 파싱..."
+    S-->>C: progress: 2/3
+    S-->>C: log: "DB 검색 실행 중..."
+    S-->>C: progress: 3/3
+    S-->>C: log: request_end (150ms)
+    S-->>C: result: [검색 결과]
+</pre>
       </div>
 
       <div class="info-box info-box--tip">
@@ -653,5 +635,7 @@ if __name__ == "__main__":
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-json.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad:true, theme:'neutral', flowchart:{useMaxWidth:true}});</script>
 </body>
 </html>

@@ -45,24 +45,16 @@
       디버깅과 유지보수를 크게 개선한다.
     </p>
 
-    <div class="diagram">
-┌─────────────────────────────────────────────────────┐
-│                  LangGraph 개념도                     │
-│                                                     │
-│   ┌───────┐     ┌───────┐     ┌───────┐            │
-│   │ START │────▶│Node A │────▶│Node B │────▶ END   │
-│   └───────┘     └───────┘     └───────┘            │
-│                      │                              │
-│                      │ 조건부 엣지                    │
-│                      ▼                              │
-│                 ┌───────┐                           │
-│                 │Node C │────▶ END                  │
-│                 └───────┘                           │
-│                                                     │
-│   * 각 노드는 State를 받아 처리하고 업데이트를 반환     │
-│   * 엣지는 노드 간의 실행 흐름을 정의                  │
-└─────────────────────────────────────────────────────┘
-    </div>
+    <div class="mermaid-wrapper">
+<pre class="mermaid">
+graph TD
+    START_NODE((START)) --> A["Node A"]
+    A --> B["Node B"]
+    B --> END_NODE((END))
+    A -.->|"조건부 엣지"| C["Node C"]
+    C --> END_NODE2((END))
+</pre>
+</div>
 
     <p>
       LangGraph는 단독으로 사용할 수도 있고, LangChain과 함께 사용할 수도 있다.
@@ -388,17 +380,14 @@ print(result["answer"])  # 생성된 답변 출력</code></pre>
       아래 그래프는 START에서 시작하여 Node A와 Node B를 거쳐 END에 도달하는 구조이다.
     </p>
 
-    <div class="diagram">
-실행 흐름: 직렬 그래프
-
-  ┌───────┐      ┌────────┐      ┌────────┐      ┌─────┐
-  │ START │─────▶│ Node A │─────▶│ Node B │─────▶│ END │
-  └───────┘      └────────┘      └────────┘      └─────┘
-      │               │               │              │
-      ▼               ▼               ▼              ▼
-  초기 State      State 업데이트   State 업데이트   최종 State
-  {text:"시작"}   {text:"시작→A"}  {text:"시작→A→B"} 반환
-    </div>
+    <div class="mermaid-wrapper">
+<pre class="mermaid">
+graph LR
+    START_NODE((START)) -->|"초기 State\n{text: 시작}"| A["Node A"]
+    A -->|"State 업데이트\n{text: 시작→A}"| B["Node B"]
+    B -->|"State 업데이트\n{text: 시작→A→B}"| END_NODE((END))
+</pre>
+</div>
 
     <h3>실행 단계 상세</h3>
 
@@ -460,5 +449,7 @@ print(result["answer"])  # 생성된 답변 출력</code></pre>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-json.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad:true, theme:'neutral', flowchart:{useMaxWidth:true}});</script>
 </body>
 </html>

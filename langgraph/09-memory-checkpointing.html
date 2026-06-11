@@ -46,34 +46,18 @@
       <li><strong>장애 복구:</strong> 서버가 중간에 다운되어도 마지막 체크포인트에서 복구할 수 있다.</li>
     </ul>
 
-    <div class="diagram">
-체크포인팅 동작 원리
-
-  invoke() 호출
-       │
-       ▼
-  ┌─────────┐   저장    ┌──────────────┐
-  │  START   │────────▶│ Checkpoint 0 │
-  └────┬────┘          └──────────────┘
-       │
-       ▼
-  ┌─────────┐   저장    ┌──────────────┐
-  │ Node A  │────────▶│ Checkpoint 1 │
-  └────┬────┘          └──────────────┘
-       │
-       ▼
-  ┌─────────┐   저장    ┌──────────────┐
-  │ Node B  │────────▶│ Checkpoint 2 │
-  └────┬────┘          └──────────────┘
-       │
-       ▼
-  ┌─────────┐   저장    ┌──────────────┐
-  │   END   │────────▶│ Checkpoint 3 │
-  └─────────┘          └──────────────┘
-
-  * 각 노드 실행 후 상태 스냅샷이 자동으로 저장된다
-  * 어떤 체크포인트로든 되돌아갈 수 있다
-    </div>
+    <div class="mermaid-wrapper">
+<pre class="mermaid">
+graph TD
+    S(("START")) -->|"저장"| CP0["Checkpoint 0"]
+    S --> A["Node A"]
+    A -->|"저장"| CP1["Checkpoint 1"]
+    A --> B["Node B"]
+    B -->|"저장"| CP2["Checkpoint 2"]
+    B --> E(("END"))
+    E -->|"저장"| CP3["Checkpoint 3"]
+</pre>
+</div>
 
     <div class="info-box info-box--info">
       <div class="info-box__title">INFO</div>
@@ -908,5 +892,7 @@ print(json.dumps(state.values.get("user_profile", {}),
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-json.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad:true, theme:'neutral', flowchart:{useMaxWidth:true}});</script>
 </body>
 </html>

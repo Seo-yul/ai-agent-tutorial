@@ -54,25 +54,39 @@
         이는 <strong>N &times; M</strong>개의 통합 코드를 만들어야 한다는 뜻이다.
       </p>
 
-      <div class="diagram">
-        <pre>
-  MCP 없이 (N × M 문제)                  MCP 사용 (N + M 해결)
-  ─────────────────────                  ─────────────────────
+      <div class="mermaid-wrapper">
+<pre class="mermaid">
+graph LR
+    subgraph before ["MCP 없이 (N x M 문제)"]
+        CD1["Claude Desktop"] --- Slack1["Slack"]
+        CD1 --- GH1["GitHub"]
+        CD1 --- PG1["PostgreSQL"]
+        CD1 --- GD1["Google Drive"]
+        CU1["Cursor"] --- Slack1
+        CU1 --- GH1
+        CU1 --- PG1
+        CU1 --- GD1
+        VS1["VS Code"] --- Slack1
+        VS1 --- GH1
+        VS1 --- PG1
+        VS1 --- GD1
+        CA1["Custom App"] --- Slack1
+        CA1 --- GH1
+        CA1 --- PG1
+        CA1 --- GD1
+    end
 
-  Claude Desktop ──┬── Slack             Claude Desktop ──┐
-  Cursor       ──┼── GitHub                  Cursor ──┤
-  VS Code      ──┼── PostgreSQL            VS Code ──┤
-  Custom App   ──┴── Google Drive        Custom App ──┘
-                                                      │
-  각 앱이 모든 도구에 대해                         MCP 프로토콜
-  개별 연동 필요 → 12개 연동                         │
-                                                ┌────┴────┐
-                                             Slack  GitHub ...
-                                            서버    서버
-
-                                          각 도구는 MCP 서버 1개만
-                                          만들면 됨 → 4 + 4 = 8개 연동
-        </pre>
+    subgraph after ["MCP 사용 (N + M 해결)"]
+        CD2["Claude Desktop"] --> MCP["MCP 프로토콜"]
+        CU2["Cursor"] --> MCP
+        VS2["VS Code"] --> MCP
+        CA2["Custom App"] --> MCP
+        MCP --> Slack2["Slack 서버"]
+        MCP --> GH2["GitHub 서버"]
+        MCP --> PG2["PostgreSQL 서버"]
+        MCP --> GD2["Google Drive 서버"]
+    end
+</pre>
       </div>
 
       <p>
@@ -87,25 +101,17 @@
       <h2>MCP 아키텍처</h2>
       <p>MCP 아키텍처는 3가지 핵심 구성요소로 이루어진다.</p>
 
-      <div class="diagram">
-        <pre>
-  ┌─────────────────────────────────────────────────┐
-  │                    Host                         │
-  │           (LLM 애플리케이션)                      │
-  │                                                 │
-  │   ┌────────────┐  ┌────────────┐                │
-  │   │  Client A  │  │  Client B  │   ...          │
-  │   └──────┬─────┘  └──────┬─────┘                │
-  └──────────┼───────────────┼──────────────────────┘
-             │               │
-      MCP 프로토콜       MCP 프로토콜
-        (1:1 연결)        (1:1 연결)
-             │               │
-  ┌──────────┴──────┐ ┌──────┴──────────┐
-  │    Server A     │ │    Server B     │
-  │  (파일 시스템)   │ │   (데이터베이스) │
-  └─────────────────┘ └─────────────────┘
-        </pre>
+      <div class="mermaid-wrapper">
+<pre class="mermaid">
+graph TD
+    subgraph Host ["Host (LLM 애플리케이션)"]
+        ClientA["Client A"]
+        ClientB["Client B"]
+        ClientEtc["..."]
+    end
+    ClientA <-->|"MCP 프로토콜 (1:1 연결)"| ServerA["Server A (파일 시스템)"]
+    ClientB <-->|"MCP 프로토콜 (1:1 연결)"| ServerB["Server B (데이터베이스)"]
+</pre>
       </div>
 
       <h3>Host (호스트)</h3>
@@ -182,34 +188,21 @@
       <h2>MCP 통신 흐름</h2>
       <p>사용자가 LLM에 요청을 보내면 MCP 통신이 어떻게 이루어지는지 살펴보자.</p>
 
-      <div class="diagram">
-        <pre>
-  사용자                Host (LLM 앱)             MCP Server
-    │                      │                        │
-    │  "서울 날씨 알려줘"   │                        │
-    │ ────────────────────▶│                        │
-    │                      │                        │
-    │                      │  1. LLM이 도구 필요    │
-    │                      │     여부 판단           │
-    │                      │                        │
-    │                      │  2. Client를 통해      │
-    │                      │     도구 호출 요청      │
-    │                      │ ──────────────────────▶│
-    │                      │                        │
-    │                      │                        │  3. 외부 API 호출
-    │                      │                        │     (날씨 API)
-    │                      │                        │
-    │                      │  4. 결과 반환           │
-    │                      │ ◀──────────────────────│
-    │                      │                        │
-    │                      │  5. LLM이 결과를       │
-    │                      │     자연어로 정리       │
-    │                      │                        │
-    │  "서울의 현재 기온은   │                        │
-    │   15°C이고..."       │                        │
-    │ ◀────────────────────│                        │
-    │                      │                        │
-        </pre>
+      <div class="mermaid-wrapper">
+<pre class="mermaid">
+sequenceDiagram
+    participant U as 사용자
+    participant H as Host (LLM 앱)
+    participant S as MCP Server
+
+    U->>H: "서울 날씨 알려줘"
+    Note over H: 1. LLM이 도구 필요 여부 판단
+    H->>S: 2. Client를 통해 도구 호출 요청
+    Note over S: 3. 외부 API 호출 (날씨 API)
+    S-->>H: 4. 결과 반환
+    Note over H: 5. LLM이 결과를 자연어로 정리
+    H-->>U: "서울의 현재 기온은 15°C이고..."
+</pre>
       </div>
 
       <p>핵심 흐름을 정리하면 다음과 같다:</p>
@@ -245,5 +238,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad:true, theme:'neutral', flowchart:{useMaxWidth:true}});</script>
 </body>
 </html>

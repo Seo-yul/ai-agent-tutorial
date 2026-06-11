@@ -232,28 +232,18 @@ def route_complex(state: State) -> str:
         조건부 라우팅이 적용된 그래프의 흐름을 시각화하면 다음과 같다.
         <code>classify</code> 노드에서 세 개의 화살표가 갈라지는 것을 확인할 수 있다.
       </p>
-      <div class="diagram">
-┌───────┐
-│ START │
-└───┬───┘
-    │
-    ▼
-┌──────────┐
-│ classify │ ← 질문을 분석하여 카테고리 결정
-└────┬─────┘
-     │
-     ├─── category="weather" ──→ ┌─────────┐ ──→ ┌─────┐
-     │                           │ weather │     │ END │
-     │                           └─────────┘     └─────┘
-     │
-     ├─── category="math" ─────→ ┌──────┐ ─────→ ┌─────┐
-     │                           │ math │        │ END │
-     │                           └──────┘        └─────┘
-     │
-     └─── category="general" ──→ ┌─────────┐ ──→ ┌─────┐
-                                 │ general │     │ END │
-                                 └─────────┘     └─────┘
-      </div>
+      <div class="mermaid-wrapper">
+<pre class="mermaid">
+graph TD
+    START_NODE((START)) --> CL["classify"]
+    CL -.->|"category = weather"| W["weather"]
+    CL -.->|"category = math"| M["math"]
+    CL -.->|"category = general"| G["general"]
+    W --> END1((END))
+    M --> END2((END))
+    G --> END3((END))
+</pre>
+</div>
       <p>
         이 다이어그램에서 핵심은 <code>classify</code> 노드에서 나오는 <strong>점선 화살표</strong>(조건부 엣지)이다.
         일반 엣지와 달리, 조건부 엣지는 런타임에 어느 방향으로 갈지 결정된다.
@@ -292,23 +282,15 @@ display(Image(app.get_graph().draw_mermaid_png()))</code></pre>
         <li><strong>평가 노드</strong>: 작업 결과를 평가하고, 재시도 여부를 결정하는 노드</li>
       </ul>
 
-      <div class="diagram">
-┌───────┐     ┌──────────┐     ┌──────────┐
-│ START │ ──→ │ generate │ ──→ │ evaluate │
-└───────┘     └──────────┘     └─────┬────┘
-                   ▲                 │
-                   │    quality &lt; 0.8 │
-                   │    &amp; attempts &lt; 3│
-                   └─── "retry" ─────┘
-                                     │
-                            quality ≥ 0.8
-                            또는 attempts ≥ 3
-                                     │
-                                     ▼
-                                 ┌─────┐
-                                 │ END │
-                                 └─────┘
-      </div>
+      <div class="mermaid-wrapper">
+<pre class="mermaid">
+graph TD
+    START_NODE((START)) --> GEN["generate"]
+    GEN --> EVAL["evaluate"]
+    EVAL -.->|"quality < 0.8\n& attempts < 3\n(retry)"| GEN
+    EVAL -.->|"quality >= 0.8\n또는 attempts >= 3"| END_NODE((END))
+</pre>
+</div>
 
       <h3>완성된 루프 예제</h3>
       <div class="code-block">
@@ -422,31 +404,21 @@ result = app.invoke(
       </p>
 
       <h3>시스템 아키텍처</h3>
-      <div class="diagram">
-┌───────┐
-│ START │
-└───┬───┘
-    ▼
-┌──────────┐
-│ classify │ ← 키워드 기반 분류
-└────┬─────┘
-     │
-     ├── "tech"      → ┌──────────────┐ → ┌──────────┐ → ┌─────┐
-     │                 │ handle_tech  │   │ finalize │   │ END │
-     │                 └──────────────┘   └──────────┘   └─────┘
-     │
-     ├── "business"  → ┌──────────────────┐ → ┌──────────┐ → ┌─────┐
-     │                 │ handle_business  │   │ finalize │   │ END │
-     │                 └──────────────────┘   └──────────┘   └─────┘
-     │
-     ├── "creative"  → ┌──────────────────┐ → ┌──────────┐ → ┌─────┐
-     │                 │ handle_creative  │   │ finalize │   │ END │
-     │                 └──────────────────┘   └──────────┘   └─────┘
-     │
-     └── "fallback"  → ┌──────────────────┐ → ┌──────────┐ → ┌─────┐
-                       │ handle_fallback  │   │ finalize │   │ END │
-                       └──────────────────┘   └──────────┘   └─────┘
-      </div>
+      <div class="mermaid-wrapper">
+<pre class="mermaid">
+graph TD
+    START_NODE((START)) --> CL["classify"]
+    CL -.->|"tech"| HT["handle_tech"]
+    CL -.->|"business"| HB["handle_business"]
+    CL -.->|"creative"| HC["handle_creative"]
+    CL -.->|"fallback"| HF["handle_fallback"]
+    HT --> FIN["finalize"]
+    HB --> FIN
+    HC --> FIN
+    HF --> FIN
+    FIN --> END_NODE((END))
+</pre>
+</div>
 
       <h3>완성 코드</h3>
       <div class="code-block">
@@ -697,5 +669,7 @@ graph.add_conditional_edges("classify", route_query)</code></pre>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-json.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad:true, theme:'neutral', flowchart:{useMaxWidth:true}});</script>
 </body>
 </html>

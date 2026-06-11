@@ -40,24 +40,21 @@
         <li><strong>Streamable HTTP</strong> — HTTP 기반의 스트리밍 통신</li>
       </ul>
 
-      <div class="diagram">
-┌──────────────────────────────────────────────┐
-│              MCP 아키텍처                      │
-├──────────────────────────────────────────────┤
-│                                              │
-│  ┌──────────┐              ┌──────────┐      │
-│  │ MCP 클라이언트│            │ MCP 서버  │      │
-│  │          │              │          │      │
-│  │  Tools   │  Transport   │  Tools   │      │
-│  │  Resources│ ◀─────────▶ │  Resources│      │
-│  │  Prompts │   (통신 계층)  │  Prompts │      │
-│  └──────────┘              └──────────┘      │
-│                                              │
-│  Transport 종류:                              │
-│  ├─ stdio        : 로컬 프로세스 간 통신         │
-│  └─ Streamable HTTP : 원격 HTTP 기반 통신       │
-│                                              │
-└──────────────────────────────────────────────┘
+      <div class="mermaid-wrapper">
+<pre class="mermaid">
+graph LR
+    subgraph Client ["MCP 클라이언트"]
+        CT["Tools"]
+        CR["Resources"]
+        CP["Prompts"]
+    end
+    subgraph Server ["MCP 서버"]
+        ST["Tools"]
+        SR["Resources"]
+        SP["Prompts"]
+    end
+    Client <-->|"Transport (통신 계층)\n- stdio: 로컬 프로세스 간 통신\n- Streamable HTTP: 원격 HTTP 기반 통신"| Server
+</pre>
       </div>
     </section>
 
@@ -316,20 +313,18 @@ mcp.run(
         </tbody>
       </table>
 
-      <div class="diagram">
-Transport 선택 의사결정 트리:
-
-서버를 어디서 실행하는가?
-├── 로컬 (같은 머신)
-│   └── stdio 선택 ✓
-│       • Claude Desktop, IDE 플러그인
-│       • 설정 간단, 보안 걱정 적음
-│
-└── 원격 (다른 머신 / 클라우드)
-    └── Streamable HTTP 선택 ✓
-        • 웹 서비스, API 서버
-        • 다중 클라이언트 지원 필요
-        • HTTPS + 인증 설정 권장
+      <div class="mermaid-wrapper">
+<pre class="mermaid">
+graph TD
+    Q{"서버를 어디서 실행하는가?"}
+    Q -->|"로컬 (같은 머신)"| STDIO["stdio 선택"]
+    Q -->|"원격 (다른 머신 / 클라우드)"| HTTP["Streamable HTTP 선택"]
+    STDIO --> S1["Claude Desktop, IDE 플러그인"]
+    STDIO --> S2["설정 간단, 보안 걱정 적음"]
+    HTTP --> H1["웹 서비스, API 서버"]
+    HTTP --> H2["다중 클라이언트 지원 필요"]
+    HTTP --> H3["HTTPS + 인증 설정 권장"]
+</pre>
       </div>
 
       <div class="info-box info-box--tip">
@@ -383,18 +378,22 @@ mcp.run(
         <li><strong>단순 도구 서버</strong> — 이전 요청 컨텍스트가 불필요한 독립적인 도구만 제공하는 서버</li>
       </ul>
 
-      <div class="diagram">
-Stateful vs Stateless 비교:
+      <div class="mermaid-wrapper">
+<pre class="mermaid">
+graph LR
+    subgraph Stateful ["Stateful (기본)"]
+        R1["요청 1"] --> SC["세션 생성"] --> SS["상태 저장"]
+        R2["요청 2"] --> SL1["세션 조회"] --> SU1["상태 활용"]
+        R3["요청 3"] --> SL2["세션 조회"] --> SU2["상태 활용"]
+        SA_INST["같은 서버 인스턴스"]
+    end
 
-Stateful (기본):
-  요청 1 ──▶ 세션 생성 ──▶ 상태 저장
-  요청 2 ──▶ 세션 조회 ──▶ 상태 활용   (같은 서버 인스턴스)
-  요청 3 ──▶ 세션 조회 ──▶ 상태 활용
-
-Stateless:
-  요청 1 ──▶ 처리 ──▶ 응답   (서버 A)
-  요청 2 ──▶ 처리 ──▶ 응답   (서버 B)  ← 다른 인스턴스도 가능
-  요청 3 ──▶ 처리 ──▶ 응답   (서버 C)
+    subgraph Stateless ["Stateless"]
+        R4["요청 1"] --> P1["처리"] --> RS1["응답 (서버 A)"]
+        R5["요청 2"] --> P2["처리"] --> RS2["응답 (서버 B)"]
+        R6["요청 3"] --> P3["처리"] --> RS3["응답 (서버 C)"]
+    end
+</pre>
       </div>
 
       <div class="info-box info-box--info">
@@ -413,5 +412,7 @@ Stateless:
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-json.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad:true, theme:'neutral', flowchart:{useMaxWidth:true}});</script>
 </body>
 </html>

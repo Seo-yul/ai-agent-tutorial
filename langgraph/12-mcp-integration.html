@@ -68,36 +68,20 @@
       </tbody>
     </table>
 
-    <div class="diagram">
-MCP + LangGraph 아키텍처
-
-  ┌──────────────────────────────────────────────────────────┐
-  │                    LangGraph Agent                       │
-  │                                                          │
-  │   ┌──────┐     ┌──────────┐     ┌──────┐               │
-  │   │START │────▶│  Agent   │────▶│ END  │               │
-  │   └──────┘     │  Node    │     └──────┘               │
-  │                └────┬─────┘                             │
-  │                     │ 도구 호출                          │
-  │                     ▼                                    │
-  │                ┌──────────┐                              │
-  │                │  Tool    │                              │
-  │                │  Node    │                              │
-  │                └────┬─────┘                              │
-  └─────────────────────┼────────────────────────────────────┘
-                        │ MCP 프로토콜
-            ┌───────────┼───────────┐
-            ▼           ▼           ▼
-       ┌─────────┐ ┌─────────┐ ┌─────────┐
-       │  MCP    │ │  MCP    │ │  MCP    │
-       │Server 1 │ │Server 2 │ │Server 3 │
-       │(검색)   │ │(계산)   │ │(파일)   │
-       └─────────┘ └─────────┘ └─────────┘
-
-  * LangGraph가 에이전트 흐름을 제어한다
-  * MCP Client가 MCP Server의 도구를 LangChain 도구로 변환한다
-  * 에이전트는 MCP 도구를 일반 도구처럼 자연스럽게 사용한다
-    </div>
+    <div class="mermaid-wrapper">
+<pre class="mermaid">
+graph TD
+    subgraph LG["LangGraph Agent"]
+        S(("START")) --> Agent["Agent Node"]
+        Agent -->|"도구 호출"| Tool["Tool Node"]
+        Tool --> Agent
+        Agent --> E(("END"))
+    end
+    Tool -->|"MCP 프로토콜"| MCP1["MCP Server 1\n(검색)"]
+    Tool -->|"MCP 프로토콜"| MCP2["MCP Server 2\n(계산)"]
+    Tool -->|"MCP 프로토콜"| MCP3["MCP Server 3\n(파일)"]
+</pre>
+</div>
 
     <div class="info-box info-box--info">
       <div class="info-box__title">INFO</div>
@@ -461,27 +445,17 @@ async def main():
 asyncio.run(main())</code></pre>
     </div>
 
-    <div class="diagram">
-여러 MCP 서버 동시 연결
-
-  ┌───────────────────────────────────────────────────┐
-  │              LangGraph Agent                      │
-  │                                                   │
-  │   사용 가능한 도구:                                 │
-  │   [add, multiply, factorial, power,              │
-  │    get_weather, get_forecast,                     │
-  │    read_file, write_file, list_files]             │
-  └──────────┬──────────┬──────────┬─────────────────┘
-             │          │          │
-     MCP Client   MCP Client   MCP Client
-             │          │          │
-             ▼          ▼          ▼
-        ┌────────┐ ┌────────┐ ┌────────┐
-        │  수학   │ │  날씨   │ │  파일   │
-        │ Server │ │ Server │ │ Server │
-        │ (stdio)│ │ (http) │ │ (stdio)│
-        └────────┘ └────────┘ └────────┘
-    </div>
+    <div class="mermaid-wrapper">
+<pre class="mermaid">
+graph TD
+    subgraph LG["LangGraph Agent"]
+        tools["사용 가능한 도구:\nadd, multiply, factorial, power,\nget_weather, get_forecast,\nread_file, write_file, list_files"]
+    end
+    LG -->|"MCP Client"| math["수학 Server\n(stdio)"]
+    LG -->|"MCP Client"| weather["날씨 Server\n(http)"]
+    LG -->|"MCP Client"| file["파일 Server\n(stdio)"]
+</pre>
+</div>
 
     <div class="info-box info-box--warning">
       <div class="info-box__title">WARNING</div>
@@ -1096,38 +1070,23 @@ LangGraph는 LangChain 팀이 개발한 AI 에이전트 프레임워크이다.
       이 챕터에서 구축한 MCP + LangGraph 시스템의 전체 아키텍처를 정리한다.
     </p>
 
-    <div class="diagram">
-MCP 기반 리서치 에이전트 — 전체 아키텍처
-
-  ┌─────────────────────────────────────────────────────────────┐
-  │                    research_agent.py                        │
-  │                                                             │
-  │  ┌─────────────────────────────────────────────────────┐   │
-  │  │              LangGraph 그래프                        │   │
-  │  │                                                     │   │
-  │  │  START ──▶ [Agent Node] ──▶ 도구 호출? ──▶ END     │   │
-  │  │                 ▲               │ Yes                │   │
-  │  │                 │               ▼                    │   │
-  │  │                 └──── [Tool Node] ◄── MCP 도구들     │   │
-  │  │                                                     │   │
-  │  └─────────────────────────────────────────────────────┘   │
-  │                           │                                 │
-  │                    MultiServerMCPClient                     │
-  │                     │              │                         │
-  └─────────────────────┼──────────────┼─────────────────────────┘
-                        │              │
-              stdio 통신 │              │ stdio 통신
-                        │              │
-               ┌────────┴───┐  ┌───────┴────┐
-               │ search     │  │ calc       │
-               │ _server.py │  │ _server.py │
-               │            │  │            │
-               │ - search   │  │ - calculate│
-               │ - get_stats│  │ - statistics│
-               │ - list     │  │ - unit     │
-               │   _topics  │  │   _convert │
-               └────────────┘  └────────────┘
-    </div>
+    <div class="mermaid-wrapper">
+<pre class="mermaid">
+graph TD
+    subgraph RA["research_agent.py"]
+        subgraph LG["LangGraph 그래프"]
+            S(("START")) --> AgentNode["Agent Node"]
+            AgentNode -->|"도구 호출"| ToolNode["Tool Node"]
+            ToolNode --> AgentNode
+            AgentNode -->|"도구 호출 없음"| E(("END"))
+        end
+        MCP["MultiServerMCPClient"]
+    end
+    ToolNode --> MCP
+    MCP -->|"stdio 통신"| search["search_server.py\n- search\n- get_stats\n- list_topics"]
+    MCP -->|"stdio 통신"| calc["calc_server.py\n- calculate\n- statistics\n- unit_convert"]
+</pre>
+</div>
 
     <!-- 정리 -->
     <h2>정리</h2>
@@ -1161,5 +1120,7 @@ MCP 기반 리서치 에이전트 — 전체 아키텍처
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-json.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad:true, theme:'neutral', flowchart:{useMaxWidth:true}});</script>
 </body>
 </html>

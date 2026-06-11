@@ -33,15 +33,12 @@
       이 예제에서는 LLM 호출 없이 순수 Python 함수만으로 그래프의 동작 원리를 이해한다.
     </p>
 
-    <div class="diagram">
-가장 간단한 그래프 구조:
-
-  ┌───────┐      ┌────────┐      ┌────────┐
-  │ START │─────▶│ Node A │─────▶│ Node B │─────▶ END
-  └───────┘      └────────┘      └────────┘
-
-  State: { text: str }
-    </div>
+    <div class="mermaid-wrapper">
+<pre class="mermaid">
+graph LR
+    START_NODE((START)) --> A["Node A"] --> B["Node B"] --> END_NODE((END))
+</pre>
+</div>
 
     <div class="code-block">
       <button class="code-block__copy">복사</button>
@@ -270,11 +267,12 @@ print(result)
       아래 예제에서는 4개의 노드를 순차적으로 연결한다.
     </p>
 
-    <div class="diagram">
-4개 노드 직렬 파이프라인:
-
-  START ──▶ 입력검증 ──▶ 전처리 ──▶ 분석 ──▶ 출력포맷 ──▶ END
-    </div>
+    <div class="mermaid-wrapper">
+<pre class="mermaid">
+graph LR
+    START_NODE((START)) --> V["입력검증"] --> P["전처리"] --> AN["분석"] --> F["출력포맷"] --> END_NODE((END))
+</pre>
+</div>
 
     <div class="code-block">
       <button class="code-block__copy">복사</button>
@@ -460,19 +458,12 @@ print("graph.png 파일이 생성되었다")</code></pre>
       <strong>정제 → 분석 → 요약</strong>의 3단계를 거쳐 처리한다.
     </p>
 
-    <div class="diagram">
-텍스트 처리 파이프라인:
-
-  START ──▶ 정제(clean) ──▶ 분석(analyze) ──▶ 요약(summarize) ──▶ END
-
-  State:
-  ┌─────────────────────────────────────────────────┐
-  │ raw_text: str         # 원본 텍스트              │
-  │ clean_text: str       # 정제된 텍스트            │
-  │ stats: dict           # 분석 통계                │
-  │ summary: str          # 최종 요약                │
-  └─────────────────────────────────────────────────┘
-    </div>
+    <div class="mermaid-wrapper">
+<pre class="mermaid">
+graph LR
+    START_NODE((START)) --> C["정제\n(clean)"] --> AN["분석\n(analyze)"] --> S["요약\n(summarize)"] --> END_NODE((END))
+</pre>
+</div>
 
     <div class="code-block">
       <button class="code-block__copy">복사</button>
@@ -713,5 +704,7 @@ for step in app.stream({
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-json.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad:true, theme:'neutral', flowchart:{useMaxWidth:true}});</script>
 </body>
 </html>

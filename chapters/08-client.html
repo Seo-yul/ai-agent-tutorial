@@ -42,30 +42,27 @@
         <li><strong>CLI 도구</strong> — 명령줄에서 MCP 서버와 상호작용</li>
       </ul>
 
-      <div class="diagram">
-┌─────────────────────────────────────────────────┐
-│              MCP 클라이언트 동작 흐름               │
-├─────────────────────────────────────────────────┤
-│                                                 │
-│  1. 연결 설정 (stdio 또는 Streamable HTTP)         │
-│     Client ──▶ Server                           │
-│                                                 │
-│  2. 초기화 (initialize)                           │
-│     Client ──▶ Server : capabilities 교환        │
-│     Client ◀── Server : 지원 기능 응답             │
-│                                                 │
-│  3. 기능 사용                                     │
-│     ├── list_tools()     → 도구 목록 조회          │
-│     ├── call_tool()      → 도구 호출              │
-│     ├── list_resources() → 리소스 목록 조회        │
-│     ├── read_resource()  → 리소스 읽기            │
-│     ├── list_prompts()   → 프롬프트 목록 조회      │
-│     └── get_prompt()     → 프롬프트 가져오기       │
-│                                                 │
-│  4. 연결 종료                                     │
-│     Client ──▶ Server : 세션 종료                 │
-│                                                 │
-└─────────────────────────────────────────────────┘
+      <div class="mermaid-wrapper">
+<pre class="mermaid">
+sequenceDiagram
+    participant C as Client
+    participant S as Server
+
+    Note over C,S: 1. 연결 설정 (stdio 또는 Streamable HTTP)
+    C->>S: 2. initialize (capabilities 교환)
+    S-->>C: 지원 기능 응답
+
+    Note over C,S: 3. 기능 사용
+    C->>S: list_tools() - 도구 목록 조회
+    C->>S: call_tool() - 도구 호출
+    C->>S: list_resources() - 리소스 목록 조회
+    C->>S: read_resource() - 리소스 읽기
+    C->>S: list_prompts() - 프롬프트 목록 조회
+    C->>S: get_prompt() - 프롬프트 가져오기
+
+    Note over C,S: 4. 연결 종료
+    C->>S: 세션 종료
+</pre>
       </div>
     </section>
 
@@ -610,5 +607,7 @@ uv run client.py</code></pre>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-json.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad:true, theme:'neutral', flowchart:{useMaxWidth:true}});</script>
 </body>
 </html>

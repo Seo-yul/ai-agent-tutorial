@@ -41,25 +41,21 @@
         <li><strong>발견 가능성</strong> — 클라이언트가 사용 가능한 프롬프트 목록을 자동으로 조회할 수 있다</li>
       </ul>
 
-      <div class="diagram">
-┌────────────────────────────────────────────┐
-│              MCP Prompts 흐름               │
-├────────────────────────────────────────────┤
-│                                            │
-│  1. 클라이언트가 프롬프트 목록 요청             │
-│     ──▶ list_prompts()                     │
-│                                            │
-│  2. 사용자가 프롬프트 선택 + 파라미터 입력       │
-│     ──▶ get_prompt("code_review",          │
-│              {"code": "...", "lang": "py"}) │
-│                                            │
-│  3. 서버가 완성된 프롬프트 메시지 반환           │
-│     ◀── [UserMessage, AssistantMessage, …] │
-│                                            │
-│  4. 클라이언트가 해당 메시지를 LLM에 전달       │
-│     ──▶ LLM 처리                            │
-│                                            │
-└────────────────────────────────────────────┘
+      <div class="mermaid-wrapper">
+<pre class="mermaid">
+sequenceDiagram
+    participant C as 클라이언트
+    participant S as MCP 서버
+    participant L as LLM
+
+    C->>S: 1. 프롬프트 목록 요청 (list_prompts)
+    S-->>C: 프롬프트 목록 반환
+    Note over C: 2. 사용자가 프롬프트 선택 + 파라미터 입력
+    C->>S: get_prompt("code_review", {"code": "...", "lang": "py"})
+    S-->>C: 3. 완성된 프롬프트 메시지 반환 [UserMessage, ...]
+    C->>L: 4. 해당 메시지를 LLM에 전달
+    L-->>C: LLM 처리 결과
+</pre>
       </div>
     </section>
 
@@ -454,5 +450,7 @@ mcp dev server.py</code></pre>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-json.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad:true, theme:'neutral', flowchart:{useMaxWidth:true}});</script>
 </body>
 </html>

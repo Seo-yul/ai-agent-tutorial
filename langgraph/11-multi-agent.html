@@ -114,30 +114,19 @@
       그 결과를 종합하여 최종 응답을 생성한다.
     </p>
 
-    <div class="diagram">
-Supervisor 패턴 아키텍처
-
-  ┌──────────┐
-  │  사용자   │
-  └─────┬────┘
-        │ 요청
-        ▼
-  ┌──────────────┐
-  │  Supervisor  │◄──────────────────────────┐
-  │  (팀 리더)   │                           │
-  └──┬───┬───┬──┘                           │
-     │   │   │                              │
-     │   │   │  작업 위임                    │ 결과 보고
-     ▼   ▼   ▼                              │
-  ┌────┐┌────┐┌────┐                        │
-  │연구││작성││검증│────────────────────────┘
-  │에이││에이││에이│
-  │전트││전트││전트│
-  └────┘└────┘└────┘
-
-  * Supervisor가 현재 상태를 보고 다음 에이전트를 선택한다
-  * 모든 에이전트는 FINISH가 될 때까지 반복적으로 호출될 수 있다
-    </div>
+    <div class="mermaid-wrapper">
+<pre class="mermaid">
+graph TD
+    User["사용자"] -->|"요청"| Sup["Supervisor\n(팀 리더)"]
+    Sup -->|"작업 위임"| Res["연구 에이전트"]
+    Sup -->|"작업 위임"| Wri["작성 에이전트"]
+    Sup -->|"작업 위임"| Rev["검증 에이전트"]
+    Res -->|"결과 보고"| Sup
+    Wri -->|"결과 보고"| Sup
+    Rev -->|"결과 보고"| Sup
+    Sup -->|"FINISH"| E(("END"))
+</pre>
+</div>
 
     <h3>Supervisor 패턴 직접 구현</h3>
 
@@ -452,20 +441,22 @@ supervisor = create_supervisor(
       이 패턴은 각 에이전트 내부에 복잡한 로직이 있을 때 특히 유용하다.
     </p>
 
-    <div class="diagram">
-서브그래프 패턴 아키텍처
-
-  ┌──────────────────── 메인 그래프 ────────────────────────┐
-  │                                                        │
-  │  START ──▶ ┌─ 연구 서브그래프 ─┐ ──▶ ┌─ 작성 서브그래프 ─┐ ──▶ END │
-  │            │ 검색 → 요약 → 정리│     │ 초안 → 편집 → 교정│      │
-  │            └──────────────────┘     └──────────────────┘      │
-  │                                                        │
-  └────────────────────────────────────────────────────────┘
-
-  * 각 서브그래프는 독립적으로 테스트, 개선 가능
-  * 서브그래프 내부 상태는 외부에서 보이지 않는다
-    </div>
+    <div class="mermaid-wrapper">
+<pre class="mermaid">
+graph LR
+    S(("START")) --> RSG
+    subgraph RSG["연구 서브그래프"]
+        direction LR
+        R1["검색"] --> R2["요약"] --> R3["정리"]
+    end
+    RSG --> WSG
+    subgraph WSG["작성 서브그래프"]
+        direction LR
+        W1["초안"] --> W2["편집"] --> W3["교정"]
+    end
+    WSG --> E(("END"))
+</pre>
+</div>
 
     <h3>서브그래프 구현</h3>
 
@@ -727,24 +718,17 @@ def agent_beta(state: MessagesState) -> dict:
       결과를 하나로 합치는 구조이다.
     </p>
 
-    <div class="diagram">
-Send를 활용한 병렬 실행
-
-                    ┌─────────────────┐
-                    │  dispatch_agents │
-                    └────┬───┬───┬────┘
-                         │   │   │
-              Send()     │   │   │     Send()
-                         ▼   ▼   ▼
-                    ┌───┐┌───┐┌───┐
-                    │ R1││ R2││ R3│   (병렬 실행)
-                    └─┬─┘└─┬─┘└─┬─┘
-                      │    │    │
-                      ▼    ▼    ▼
-                    ┌─────────────────┐
-                    │   aggregate     │   (결과 취합)
-                    └─────────────────┘
-    </div>
+    <div class="mermaid-wrapper">
+<pre class="mermaid">
+graph TD
+    dispatch["dispatch_agents"] -->|"Send()"| R1["R1"]
+    dispatch -->|"Send()"| R2["R2"]
+    dispatch -->|"Send()"| R3["R3"]
+    R1 --> agg["aggregate\n(결과 취합)"]
+    R2 --> agg
+    R3 --> agg
+</pre>
+</div>
 
     <div class="code-block">
       <button class="code-block__copy">복사</button>
@@ -853,31 +837,20 @@ print(result["final_summary"])</code></pre>
       <li>품질이 충분하면 최종 결과물을 반환한다</li>
     </ol>
 
-    <div class="diagram">
-콘텐츠 제작 팀 워크플로우
-
-  사용자 요청
-      │
-      ▼
-  ┌─────────────┐
-  │  Supervisor │◄─────────────────────────────────┐
-  └──┬──┬──┬────┘                                  │
-     │  │  │                                       │
-     │  │  └──▶ ┌────────────┐    ┌────────────┐   │
-     │  │       │  Reviewer  │───▶│ 품질 판단   │───┘
-     │  │       │  (편집자)   │    │ PASS/FAIL  │
-     │  │       └────────────┘    └────────────┘
-     │  │
-     │  └──────▶ ┌────────────┐
-     │           │   Writer   │
-     │           │  (작성자)   │
-     │           └────────────┘
-     │
-     └─────────▶ ┌────────────┐
-                 │ Researcher │
-                 │  (연구원)   │
-                 └────────────┘
-    </div>
+    <div class="mermaid-wrapper">
+<pre class="mermaid">
+graph TD
+    User["사용자 요청"] --> Sup["Supervisor"]
+    Sup --> Res["Researcher\n(연구원)"]
+    Sup --> Wri["Writer\n(작성자)"]
+    Sup --> Rev["Reviewer\n(편집자)"]
+    Res --> Sup
+    Wri --> Sup
+    Rev --> QC{"품질 판단\nPASS / FAIL"}
+    QC -->|"FAIL"| Sup
+    QC -->|"PASS"| E(("END"))
+</pre>
+</div>
 
     <div class="code-block">
       <button class="code-block__copy">복사</button>
@@ -1159,5 +1132,7 @@ print(f"\n총 수정 횟수: {result['revision_count']}")</code></pre>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-json.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad:true, theme:'neutral', flowchart:{useMaxWidth:true}});</script>
 </body>
 </html>

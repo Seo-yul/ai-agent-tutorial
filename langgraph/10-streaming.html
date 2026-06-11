@@ -46,17 +46,22 @@
       <li><strong>체감 응답 시간 단축:</strong> 실제 처리 시간은 같더라도, 중간 결과를 보여줌으로써 체감 대기 시간을 크게 줄인다.</li>
     </ul>
 
-    <div class="diagram">
-invoke() vs stream() 비교
-
-  [invoke() 방식]
-  사용자 요청 ──▶ ............대기............ ──▶ 최종 결과
-                 (아무런 피드백 없음)
-
-  [stream() 방식]
-  사용자 요청 ──▶ Node A 완료 ──▶ Node B 완료 ──▶ 토큰1 토큰2 ... ──▶ 완료
-                  (실시간 이벤트)   (실시간 이벤트)   (글자씩 출력)
-    </div>
+    <div class="mermaid-wrapper">
+<pre class="mermaid">
+graph LR
+    subgraph invoke["invoke() 방식"]
+        direction LR
+        I1["사용자 요청"] -.->|"......대기 (피드백 없음)......"| I2["최종 결과"]
+    end
+    subgraph stream["stream() 방식"]
+        direction LR
+        S1["사용자 요청"] --> S2["Node A 완료"]
+        S2 --> S3["Node B 완료"]
+        S3 --> S4["토큰1 토큰2 ..."]
+        S4 --> S5["완료"]
+    end
+</pre>
+</div>
 
     <div class="info-box info-box--info">
       <div class="info-box__title">INFO</div>
@@ -339,28 +344,16 @@ print("\n\n--- 스트리밍 완료 ---")</code></pre>
       이벤트의 흐름을 시각적으로 표현하면 다음과 같다:
     </p>
 
-    <div class="diagram">
-토큰 단위 스트리밍 이벤트 흐름 (도구 사용 에이전트)
-
-  시간 ──────────────────────────────────────────────────▶
-
-  [AIMessageChunk]  "서울"  "과"  " 부산"  "의"  " 날씨"  "를"  ...
-       │
-       ▼  도구 호출 결정
-  [AIMessageChunk + tool_call_chunks]  도구: get_weather("서울")
-       │
-       ▼  도구 실행
-  [ToolMessage]  "서울 날씨: 맑음, 25도"
-       │
-       ▼  도구 호출 결정
-  [AIMessageChunk + tool_call_chunks]  도구: get_weather("부산")
-       │
-       ▼  도구 실행
-  [ToolMessage]  "부산 날씨: 흐림, 22도"
-       │
-       ▼  최종 답변 생성
-  [AIMessageChunk]  "서울"  "은"  " 맑고"  " 25"  "도"  ...
-    </div>
+    <div class="mermaid-wrapper">
+<pre class="mermaid">
+graph TD
+    A1["AIMessageChunk\n토큰 스트리밍"] -->|"도구 호출 결정"| A2["AIMessageChunk\n+ tool_call_chunks\nget_weather 서울"]
+    A2 -->|"도구 실행"| T1["ToolMessage\n서울 날씨: 맑음, 25도"]
+    T1 -->|"도구 호출 결정"| A3["AIMessageChunk\n+ tool_call_chunks\nget_weather 부산"]
+    A3 -->|"도구 실행"| T2["ToolMessage\n부산 날씨: 흐림, 22도"]
+    T2 -->|"최종 답변 생성"| A4["AIMessageChunk\n토큰 스트리밍"]
+</pre>
+</div>
 
     <!-- 섹션 5: 비동기 스트리밍 -->
     <h2>비동기 스트리밍</h2>
@@ -824,5 +817,7 @@ asyncio.run(main())</code></pre>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-json.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad:true, theme:'neutral', flowchart:{useMaxWidth:true}});</script>
 </body>
 </html>

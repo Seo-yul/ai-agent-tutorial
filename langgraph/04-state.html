@@ -34,23 +34,16 @@
       LangGraph는 반환된 업데이트를 기존 State에 자동으로 병합(merge)한다.
     </p>
 
-    <div class="diagram">
-State의 흐름:
-
-  ┌──────────┐      ┌──────────┐      ┌──────────┐
-  │  Node A  │      │  Node B  │      │  Node C  │
-  │          │      │          │      │          │
-  │ State 읽기│─────▶│ State 읽기│─────▶│ State 읽기│
-  │ 일부 수정 │      │ 일부 수정 │      │ 일부 수정 │
-  └──────────┘      └──────────┘      └──────────┘
-       │                 │                 │
-       ▼                 ▼                 ▼
-  {answer: "..."}   {score: 0.9}    {final: "..."}
-       │                 │                 │
-       └────────┬────────┘                 │
-                ▼                          ▼
-        State에 자동 병합              State에 자동 병합
-    </div>
+    <div class="mermaid-wrapper">
+<pre class="mermaid">
+graph LR
+    A["Node A\nState 읽기 / 일부 수정"] -->|"State 전달"| B["Node B\nState 읽기 / 일부 수정"]
+    B -->|"State 전달"| C["Node C\nState 읽기 / 일부 수정"]
+    A -.->|"{answer: ...}"| M1["State에 자동 병합"]
+    B -.->|"{score: 0.9}"| M1
+    C -.->|"{final: ...}"| M2["State에 자동 병합"]
+</pre>
+</div>
 
     <p>
       State를 이해하는 것은 LangGraph를 마스터하는 핵심이다.
@@ -573,21 +566,12 @@ def another_llm_node(state: CountState) -> dict:
       검색 결과를 바탕으로 답변을 생성하는 패턴이다.
     </p>
 
-    <div class="diagram">
-RAG 파이프라인 구조:
-
-  START ──▶ 검색(retrieve) ──▶ 평가(evaluate) ──▶ 생성(generate) ──▶ END
-
-  State 흐름:
-  ┌────────────────────────────────────────────────────────────┐
-  │ question: "LangGraph란?"                                   │
-  │ documents: [] → ["문서1", "문서2"] → (유지)                  │
-  │ scores: [] → (유지) → [0.9, 0.7] → (유지)                  │
-  │ best_score: 0.0 → (유지) → 0.9 → (유지)                    │
-  │ answer: "" → (유지) → (유지) → "LangGraph는 ..."            │
-  │ sources: [] → (유지) → (유지) → ["문서1"]                    │
-  └────────────────────────────────────────────────────────────┘
-    </div>
+    <div class="mermaid-wrapper">
+<pre class="mermaid">
+graph LR
+    START_NODE((START)) --> R["검색\n(retrieve)"] --> E["평가\n(evaluate)"] --> G["생성\n(generate)"] --> END_NODE((END))
+</pre>
+</div>
 
     <div class="code-block">
       <button class="code-block__copy">복사</button>
@@ -980,5 +964,7 @@ result = app.invoke({
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-json.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad:true, theme:'neutral', flowchart:{useMaxWidth:true}});</script>
 </body>
 </html>

@@ -34,20 +34,14 @@
         반복하여 복잡한 문제를 해결하는 방법이다.
       </p>
 
-      <div class="diagram">
-┌────────────────────────────────────────────────────┐
-│                  ReAct 루프                        │
-│                                                    │
-│   ┌──────────┐    ┌──────────┐    ┌────────────┐  │
-│   │ Thought  │ →  │  Action  │ →  │Observation │  │
-│   │ (생각)   │    │  (행동)  │    │  (관찰)    │  │
-│   └──────────┘    └──────────┘    └─────┬──────┘  │
-│        ▲                                │         │
-│        └────────────────────────────────┘         │
-│                                                    │
-│   반복: 충분한 정보를 얻을 때까지 계속한다         │
-└────────────────────────────────────────────────────┘
-      </div>
+      <div class="mermaid-wrapper">
+<pre class="mermaid">
+graph LR
+    T["Thought\n(생각)"] --> A["Action\n(행동)"]
+    A --> O["Observation\n(관찰)"]
+    O -->|"충분한 정보를 얻을 때까지\n반복한다"| T
+</pre>
+</div>
 
       <p>구체적인 사고 과정의 예를 보자:</p>
       <div class="code-block">
@@ -159,22 +153,15 @@ print(result["messages"][-1].content)</code></pre>
         이전 챕터(Tool 통합)에서 직접 구축한 구조와 동일하다.
       </p>
 
-      <div class="diagram">
-┌───────┐
-│ START │
-└───┬───┘
-    ▼
-┌─────────┐  tool_calls 있음   ┌─────────┐
-│  agent  │ ─────────────────→ │  tools  │
-│  (LLM)  │ ←───────────────── │(ToolNode)│
-└────┬────┘  도구 결과 반환     └─────────┘
-     │
-     │ tool_calls 없음
-     ▼
-┌─────┐
-│ END │
-└─────┘
-      </div>
+      <div class="mermaid-wrapper">
+<pre class="mermaid">
+graph TD
+    S(("START")) --> agent["agent\n(LLM)"]
+    agent -->|"tool_calls 있음"| tools["tools\n(ToolNode)"]
+    tools -->|"도구 결과 반환"| agent
+    agent -->|"tool_calls 없음"| E(("END"))
+</pre>
+</div>
 
       <p>
         내부적으로 다음 세 가지 컴포넌트가 자동으로 구성된다:
@@ -801,5 +788,7 @@ print("턴 3 답변:", result3["messages"][-1].content)</code></pre>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-json.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad:true, theme:'neutral', flowchart:{useMaxWidth:true}});</script>
 </body>
 </html>
