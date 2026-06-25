@@ -236,10 +236,30 @@ function setupHamburger() {
   });
 }
 
+// Code tabs
+function setupCodeTabs() {
+  document.querySelectorAll('.code-tabs').forEach(tabs => {
+    const navBtns = tabs.querySelectorAll('.code-tabs__tab');
+    const panels = tabs.querySelectorAll('.code-tabs__panel');
+
+    navBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const target = btn.dataset.tab;
+        navBtns.forEach(b => b.classList.remove('code-tabs__tab--active'));
+        panels.forEach(p => p.classList.remove('code-tabs__panel--active'));
+        btn.classList.add('code-tabs__tab--active');
+        const panel = tabs.querySelector(`.code-tabs__panel[data-tab="${target}"]`);
+        if (panel) panel.classList.add('code-tabs__panel--active');
+      });
+    });
+  });
+}
+
 // Init
 document.addEventListener('DOMContentLoaded', () => {
   buildSidebar();
   buildPageNav();
   setupCopyButtons();
   setupHamburger();
+  setupCodeTabs();
 });

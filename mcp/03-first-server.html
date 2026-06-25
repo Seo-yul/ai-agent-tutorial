@@ -9,284 +9,798 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.css">
 </head>
 <body>
-
 <header class="site-header">
-  <button class="hamburger" aria-label="메뉴">
-    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-  </button>
+  <button class="hamburger" aria-label="메뉴"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
   <a href="../index.html" class="site-header__title"><span>MCP</span> Python SDK 튜토리얼</a>
   <span class="site-header__badge">v1.12.x</span>
 </header>
-
 <div class="layout">
   <nav class="sidebar"></nav>
   <main class="main">
     <span class="chapter-badge chapter-badge--basic">기본 과정</span>
     <h1>첫 번째 MCP 서버</h1>
-    <p class="chapter-subtitle">FastMCP로 첫 번째 MCP 서버를 만들고 실행한다</p>
+    <p class="chapter-subtitle">FastMCP로 첫 서버를 만들고, Inspector와 Claude Desktop에서 테스트한다</p>
 
-    <!-- 1. FastMCP 소개 -->
+    <!-- ============================================================ -->
+    <!-- 1. FastMCP란?                                                 -->
+    <!-- ============================================================ -->
     <section>
-      <h2>FastMCP 소개</h2>
-      <p>
-        <strong>FastMCP</strong>는 MCP Python SDK가 제공하는 고수준(high-level) API이다.
-        복잡한 프로토콜 세부사항을 숨기고, Python 데코레이터만으로 MCP 서버를 구축할 수 있게 해준다.
-      </p>
-      <p>FastMCP의 주요 특징:</p>
-      <ul>
-        <li>데코레이터 기반으로 도구, 리소스, 프롬프트를 간단히 등록한다.</li>
-        <li>함수의 타입 힌트를 자동으로 파싱하여 입력 스키마를 생성한다.</li>
-        <li>함수의 docstring을 도구 설명으로 자동 사용한다.</li>
-        <li>동기/비동기 함수를 모두 지원한다.</li>
-      </ul>
-    </section>
+      <h2>FastMCP란?</h2>
 
-    <!-- 2. 최소한의 서버 -->
-    <section>
-      <h2>최소한의 서버</h2>
-      <p>
-        가장 간단한 MCP 서버를 만들어보자.
-        프로젝트 디렉토리에 <code>server.py</code> 파일을 생성하고 다음 코드를 작성한다.
-      </p>
+      <div class="concept-box">
+        <div class="concept-box__title">핵심 개념: FastMCP의 설계 철학</div>
+        <p>
+          <strong>FastMCP</strong>는 MCP Python SDK가 제공하는 <strong>고수준(High-level) API</strong>이다.
+          "Pythonic하게, 데코레이터 하나로, 타입 힌트만으로" MCP 서버를 만들 수 있도록 설계되었다.
+          개발자는 프로토콜 세부사항(JSON-RPC, 메시지 포맷, Transport 관리)을 전혀 신경 쓸 필요 없이,
+          일반 Python 함수를 작성하는 것만으로 LLM이 호출할 수 있는 도구를 만든다.
+        </p>
+      </div>
 
-      <div class="code-block">
-        <button class="code-block__copy">복사</button>
-        <pre class="line-numbers"><code class="language-python">from mcp.server.fastmcp import FastMCP
+      <h3>High-level API (FastMCP) vs Low-level API (Server)</h3>
 
-# MCP 서버 인스턴스 생성
-mcp = FastMCP("My First Server")
+      <div class="comparison-grid">
+        <div class="comparison-panel comparison-panel--a">
+          <div class="comparison-panel__header">FastMCP (고수준) &mdash; 권장</div>
+          <div class="comparison-panel__body">
+<pre><code class="language-python">from mcp.server.fastmcp import FastMCP
+
+mcp = FastMCP("Calculator")
 
 @mcp.tool()
 def add(a: int, b: int) -> int:
     """두 수를 더한다"""
     return a + b
 
-if __name__ == "__main__":
-    mcp.run()</code></pre>
+mcp.run()</code></pre>
+            <p>데코레이터 기반. 함수 시그니처에서 스키마를 자동 생성한다. 대부분의 경우 이것으로 충분하다.</p>
+          </div>
+        </div>
+        <div class="comparison-panel comparison-panel--b">
+          <div class="comparison-panel__header">Server (저수준)</div>
+          <div class="comparison-panel__body">
+<pre><code class="language-python">from mcp.server import Server
+import mcp.types as types
+
+server = Server("Calculator")
+
+@server.list_tools()
+async def list_tools():
+    return [types.Tool(
+        name="add",
+        description="두 수를 더한다",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "a": {"type": "integer"},
+                "b": {"type": "integer"}
+            },
+            "required": ["a", "b"]
+        }
+    )]
+
+@server.call_tool()
+async def call_tool(name, arguments):
+    if name == "add":
+        return [types.TextContent(
+            type="text",
+            text=str(arguments["a"] + arguments["b"])
+        )]</code></pre>
+            <p>직접 핸들러를 등록한다. JSON Schema를 수동으로 정의해야 한다. 고급 커스터마이징이 필요할 때 사용한다.</p>
+          </div>
+        </div>
       </div>
 
-      <p>이 10줄의 코드가 완전한 MCP 서버이다. LLM이 <code>add</code> 도구를 호출하면 두 정수를 더한 결과를 반환한다.</p>
-    </section>
-
-    <!-- 3. 코드 분석 -->
-    <section>
-      <h2>코드 분석</h2>
-      <p>각 줄이 무엇을 하는지 자세히 살펴보자.</p>
-
-      <h3>1. FastMCP 임포트 및 인스턴스 생성</h3>
-      <div class="code-block">
-        <button class="code-block__copy">복사</button>
-        <pre class="line-numbers"><code class="language-python">from mcp.server.fastmcp import FastMCP
-
-# 서버 이름은 클라이언트가 서버를 식별하는 데 사용된다
-mcp = FastMCP("My First Server")</code></pre>
-      </div>
-      <p>
-        <code>FastMCP</code> 클래스의 인스턴스를 생성한다. 인자로 전달하는 문자열은 서버의 이름이다.
-        이 이름은 클라이언트가 여러 서버를 구분할 때 사용된다.
-      </p>
-
-      <h3>2. 도구 등록</h3>
-      <div class="code-block">
-        <button class="code-block__copy">복사</button>
-        <pre class="line-numbers"><code class="language-python">@mcp.tool()
-def add(a: int, b: int) -> int:
-    """두 수를 더한다"""
-    return a + b</code></pre>
-      </div>
-      <p>
-        <code>@mcp.tool()</code> 데코레이터는 일반 Python 함수를 MCP 도구로 등록한다.
-        SDK가 자동으로 처리하는 것들:
-      </p>
-      <ul>
-        <li><strong>함수 이름</strong> → 도구 이름 (<code>add</code>)</li>
-        <li><strong>타입 힌트</strong> (<code>a: int, b: int</code>) → 입력 JSON 스키마</li>
-        <li><strong>docstring</strong> (<code>"두 수를 더한다"</code>) → 도구 설명 (LLM이 언제 이 도구를 쓸지 판단하는 근거)</li>
-        <li><strong>반환 타입</strong> → 자동 직렬화</li>
-      </ul>
-
-      <div class="info-box info-box--warning">
-        <div class="info-box__title">WARNING</div>
-        <p>docstring은 반드시 작성해야 한다. LLM은 docstring을 보고 도구의 용도를 파악한다. docstring이 없으면 LLM이 도구를 올바르게 사용하지 못할 수 있다.</p>
-      </div>
-
-      <h3>3. 서버 실행</h3>
-      <div class="code-block">
-        <button class="code-block__copy">복사</button>
-        <pre class="line-numbers"><code class="language-python">if __name__ == "__main__":
-    mcp.run()</code></pre>
-      </div>
-      <p>
-        <code>mcp.run()</code>은 서버를 시작하고 클라이언트의 연결을 대기한다.
-        기본적으로 <strong>stdio</strong>(표준 입출력) 전송 방식을 사용한다.
-        이는 서버와 클라이언트가 같은 머신에서 프로세스 간 통신을 하는 방식이다.
-      </p>
-    </section>
-
-    <!-- 4. 서버 실행 -->
-    <section>
-      <h2>서버 실행</h2>
-      <p>서버를 실행하는 방법은 두 가지가 있다.</p>
-
-      <h3>방법 1: 직접 실행</h3>
-      <div class="code-block">
-        <button class="code-block__copy">복사</button>
-        <pre class="line-numbers"><code class="language-bash"># 서버 직접 실행 (stdio 모드)
-uv run server.py</code></pre>
-      </div>
-      <p>
-        이 방식은 서버가 stdio로 입력을 대기하므로, 터미널에서는 아무 출력도 보이지 않는다.
-        실제 테스트를 위해서는 MCP Inspector를 사용하는 것이 좋다.
-      </p>
-
-      <h3>방법 2: MCP Inspector로 개발 모드 실행 (권장)</h3>
-      <div class="code-block">
-        <button class="code-block__copy">복사</button>
-        <pre class="line-numbers"><code class="language-bash"># MCP Inspector와 함께 개발 모드로 실행
-uv run mcp dev server.py</code></pre>
-      </div>
-      <p>
-        <code>mcp dev</code> 명령은 MCP Inspector를 함께 시작한다.
-        브라우저에서 Inspector UI를 열어 도구를 직접 테스트할 수 있다.
-      </p>
-
-      <div class="info-box info-box--tip">
-        <div class="info-box__title">TIP</div>
-        <p>개발 중에는 항상 <code>mcp dev</code>를 사용하는 것을 권장한다. Inspector에서 도구를 호출하고 결과를 즉시 확인할 수 있어 디버깅이 훨씬 편리하다.</p>
+      <div class="deep-dive">
+        <div class="deep-dive__title">Deep Dive: FastMCP가 내부적으로 하는 일</div>
+        <p>
+          <code>@mcp.tool()</code> 데코레이터가 함수에 적용되면 FastMCP는 다음 세 가지를 자동으로 처리한다.
+        </p>
+        <ol>
+          <li><strong>함수 시그니처 파싱</strong> &mdash; Python의 <code>inspect</code> 모듈로 매개변수 이름, 타입 힌트, 기본값을 추출한다.</li>
+          <li><strong>JSON Schema 생성</strong> &mdash; 추출된 타입 정보를 MCP 프로토콜이 요구하는 <code>inputSchema</code> (JSON Schema Draft 7)로 변환한다. <code>int</code> &rarr; <code>{"type": "integer"}</code>, <code>str</code> &rarr; <code>{"type": "string"}</code>, <code>Optional[str]</code> &rarr; nullable 등.</li>
+          <li><strong>Transport 관리</strong> &mdash; <code>mcp.run()</code> 호출 시 기본 stdio Transport를 설정하고, JSON-RPC 메시지의 직렬화/역직렬화, 요청 라우팅을 처리한다.</li>
+        </ol>
+        <p>즉, FastMCP는 "Python 함수 &rarr; MCP 프로토콜 엔드포인트" 변환기이다.</p>
       </div>
     </section>
 
-    <!-- 5. MCP Inspector로 테스트 -->
+    <!-- ============================================================ -->
+    <!-- 2. 최소한의 서버                                              -->
+    <!-- ============================================================ -->
     <section>
-      <h2>MCP Inspector로 테스트</h2>
-      <p>
-        <code>uv run mcp dev server.py</code>를 실행하면 터미널에 Inspector URL이 표시된다.
-        브라우저에서 해당 URL(보통 <code>http://localhost:5173</code>)을 열면 Inspector UI가 나타난다.
-      </p>
-
-      <p>Inspector에서 테스트하는 순서:</p>
-      <ol>
-        <li>좌측 패널에서 <strong>"Tools"</strong> 탭을 클릭한다.</li>
-        <li>등록된 도구 목록에서 <strong>"add"</strong>를 선택한다.</li>
-        <li>파라미터 입력란에 <code>a: 3</code>, <code>b: 5</code>를 입력한다.</li>
-        <li><strong>"Run Tool"</strong> 버튼을 클릭한다.</li>
-        <li>결과 패널에 <code>8</code>이 표시되는 것을 확인한다.</li>
-      </ol>
-
-      <div class="info-box info-box--info">
-        <div class="info-box__title">INFO</div>
-        <p>MCP Inspector는 MCP SDK에 포함된 개발 도구이다. 서버의 모든 도구, 리소스, 프롬프트를 탐색하고 테스트할 수 있는 웹 UI를 제공한다.</p>
-      </div>
-    </section>
-
-    <!-- 6. 리소스와 프롬프트 추가 -->
-    <section>
-      <h2>리소스와 프롬프트 추가</h2>
-      <p>
-        서버에 도구만 있는 것이 아니라, 리소스(Resource)와 프롬프트(Prompt)도 추가해보자.
-        앞서 만든 <code>server.py</code>를 확장한다.
-      </p>
+      <h2>최소한의 서버 &mdash; 10줄로 시작하기</h2>
+      <p>프로젝트 디렉토리에 <code>server.py</code> 파일을 생성하고 다음 코드를 작성한다.</p>
 
       <div class="code-block">
         <button class="code-block__copy">복사</button>
         <pre class="line-numbers"><code class="language-python">from mcp.server.fastmcp import FastMCP
 
+# 1. 서버 인스턴스 생성 — 이름은 클라이언트가 서버를 식별할 때 사용된다
 mcp = FastMCP("My First Server")
 
-# ── 도구 (Tool) ─────────────────────────────
+# 2. 도구 등록 — 데코레이터 하나로 MCP 도구가 된다
 @mcp.tool()
 def add(a: int, b: int) -> int:
     """두 수를 더한다"""
     return a + b
 
-@mcp.tool()
-def multiply(a: int, b: int) -> int:
-    """두 수를 곱한다"""
-    return a * b
-
-# ── 리소스 (Resource) ────────────────────────
-@mcp.resource("greeting://{name}")
-def get_greeting(name: str) -> str:
-    """개인화된 인사말을 반환한다"""
-    return f"안녕하세요, {name}님! MCP 서버에 오신 것을 환영한다."
-
-@mcp.resource("config://app")
-def get_config() -> dict:
-    """애플리케이션 설정을 반환한다"""
-    return {
-        "app_name": "MCP Demo",
-        "version": "1.0.0",
-        "debug": True
-    }
-
-# ── 프롬프트 (Prompt) ────────────────────────
-@mcp.prompt()
-def review_code(code: str) -> str:
-    """코드 리뷰 프롬프트"""
-    return f"다음 코드를 리뷰해주세요:\n\n{code}"
-
-@mcp.prompt()
-def explain_error(error_message: str) -> str:
-    """에러 설명 프롬프트"""
-    return f"다음 에러 메시지를 분석하고 해결 방법을 제안해주세요:\n\n{error_message}"
-
+# 3. 서버 실행 — 기본적으로 stdio 전송 방식을 사용한다
 if __name__ == "__main__":
     mcp.run()</code></pre>
       </div>
 
-      <p>각 프리미티브의 데코레이터를 정리하면 다음과 같다:</p>
+      <p>이 10줄이 완전한 MCP 서버이다. 각 부분을 자세히 분석해보겠다.</p>
+
+      <h3>줄 단위 분석</h3>
 
       <table>
         <thead>
-          <tr>
-            <th>프리미티브</th>
-            <th>데코레이터</th>
-            <th>특징</th>
-          </tr>
+          <tr><th>줄</th><th>코드</th><th>설명</th></tr>
         </thead>
         <tbody>
           <tr>
-            <td>Tool</td>
-            <td><code>@mcp.tool()</code></td>
-            <td>LLM이 호출. 계산, API 호출 등 동작 수행.</td>
+            <td>1</td>
+            <td><code>from mcp.server.fastmcp import FastMCP</code></td>
+            <td>고수준 API 클래스를 임포트한다.</td>
           </tr>
           <tr>
-            <td>Resource</td>
-            <td><code>@mcp.resource("uri://{param}")</code></td>
-            <td>URI 패턴으로 데이터 노출. 읽기 전용.</td>
+            <td>3</td>
+            <td><code>mcp = FastMCP("My First Server")</code></td>
+            <td>서버 인스턴스를 생성한다. 문자열 인자는 서버 이름으로, <code>initialize</code> 응답의 <code>serverInfo.name</code>에 포함된다.</td>
           </tr>
           <tr>
-            <td>Prompt</td>
-            <td><code>@mcp.prompt()</code></td>
-            <td>재사용 가능한 프롬프트 템플릿.</td>
+            <td>5-8</td>
+            <td><code>@mcp.tool()</code> + 함수 정의</td>
+            <td>일반 Python 함수를 MCP 도구로 등록한다. 타입 힌트 &rarr; JSON Schema, docstring &rarr; 도구 설명으로 자동 변환된다.</td>
+          </tr>
+          <tr>
+            <td>10-11</td>
+            <td><code>mcp.run()</code></td>
+            <td>이벤트 루프를 시작하고 클라이언트 연결을 대기한다. 기본 Transport는 stdio이다.</td>
           </tr>
         </tbody>
       </table>
 
-      <div class="info-box info-box--tip">
-        <div class="info-box__title">TIP</div>
-        <p>리소스 URI에서 <code>{name}</code>과 같은 중괄호 부분은 경로 파라미터이다. <code>greeting://Alice</code>로 요청하면 <code>name</code>에 <code>"Alice"</code>가 전달된다.</p>
+      <div class="info-box info-box--warning">
+        <div class="info-box__title">WARNING</div>
+        <p><strong>docstring은 반드시 작성해야 한다.</strong> LLM은 도구의 docstring을 보고 "이 도구가 어떤 상황에서 유용한지" 판단한다. docstring이 없거나 부정확하면 LLM이 도구를 호출하지 않거나 잘못된 인자를 전달할 수 있다.</p>
+      </div>
+
+      <h3><code>@mcp.tool()</code>이 프로토콜 레벨에서 하는 일</h3>
+      <p>클라이언트가 서버에 도구 목록을 요청하면 다음과 같은 JSON-RPC 메시지가 교환된다.</p>
+
+      <div class="protocol-msg protocol-msg--request">
+        <div class="protocol-msg__header"><span class="protocol-msg__arrow">&rarr;</span> REQUEST &mdash; tools/list</div>
+        <pre class="language-json"><code class="language-json">{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/list",
+  "params": {}
+}</code></pre>
+      </div>
+
+      <div class="protocol-msg protocol-msg--response">
+        <div class="protocol-msg__header"><span class="protocol-msg__arrow">&larr;</span> RESPONSE</div>
+        <pre class="language-json"><code class="language-json">{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "tools": [
+      {
+        "name": "add",
+        "description": "두 수를 더한다",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "a": { "type": "integer", "title": "A" },
+            "b": { "type": "integer", "title": "B" }
+          },
+          "required": ["a", "b"]
+        }
+      }
+    ]
+  }
+}</code></pre>
+      </div>
+
+      <p>LLM이 도구를 호출하면 다음 메시지가 교환된다.</p>
+
+      <div class="protocol-msg protocol-msg--request">
+        <div class="protocol-msg__header"><span class="protocol-msg__arrow">&rarr;</span> REQUEST &mdash; tools/call</div>
+        <pre class="language-json"><code class="language-json">{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "method": "tools/call",
+  "params": {
+    "name": "add",
+    "arguments": { "a": 3, "b": 5 }
+  }
+}</code></pre>
+      </div>
+
+      <div class="protocol-msg protocol-msg--response">
+        <div class="protocol-msg__header"><span class="protocol-msg__arrow">&larr;</span> RESPONSE</div>
+        <pre class="language-json"><code class="language-json">{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "8"
+      }
+    ]
+  }
+}</code></pre>
+      </div>
+
+      <p>개발자가 작성한 것은 Python 함수뿐이지만, FastMCP가 이 모든 프로토콜 메시지를 자동으로 생성하고 처리한다.</p>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- 3. 서버 실행 방법 3가지                                       -->
+    <!-- ============================================================ -->
+    <section>
+      <h2>서버 실행 방법 3가지</h2>
+
+      <ol class="step-list">
+        <li class="step-list__item">
+          <span class="step-list__number">1</span>
+          <div class="step-list__content">
+            <strong>직접 실행 (stdio 모드)</strong>
+            <div class="code-block">
+              <button class="code-block__copy">복사</button>
+              <pre class="line-numbers"><code class="language-bash">uv run server.py</code></pre>
+            </div>
+            <p>
+              서버가 stdio 모드로 시작되어 표준 입력(stdin)에서 JSON-RPC 메시지를 대기한다.
+              터미널에는 아무것도 출력되지 않으며, 이 상태에서 직접 테스트하기는 어렵다.
+              주로 Claude Desktop이나 다른 MCP 클라이언트가 자식 프로세스로 실행할 때 사용되는 방식이다.
+            </p>
+          </div>
+        </li>
+        <li class="step-list__item">
+          <span class="step-list__number">2</span>
+          <div class="step-list__content">
+            <strong>MCP Inspector로 개발 모드 실행 (권장)</strong>
+            <div class="code-block">
+              <button class="code-block__copy">복사</button>
+              <pre class="line-numbers"><code class="language-bash"># Inspector와 함께 서버 시작
+uv run mcp dev server.py
+
+# 출력 예시:
+# Starting MCP Inspector...
+# Proxy server listening on port 6277
+# 🔍 MCP Inspector: http://localhost:5173</code></pre>
+            </div>
+            <p>
+              <code>mcp dev</code>는 서버를 프록시 프로세스로 감싸고 MCP Inspector 웹 UI를 함께 시작한다.
+              브라우저에서 <code>http://localhost:5173</code>을 열면 도구를 직접 테스트할 수 있다.
+              <strong>개발 중에는 항상 이 방법을 사용하는 것을 권장한다.</strong>
+            </p>
+          </div>
+        </li>
+        <li class="step-list__item">
+          <span class="step-list__number">3</span>
+          <div class="step-list__content">
+            <strong>Claude Desktop에 등록하여 실제 LLM에서 사용</strong>
+            <p><code>claude_desktop_config.json</code>에 서버를 등록하면 Claude가 직접 도구를 호출한다.</p>
+            <div class="code-block">
+              <button class="code-block__copy">복사</button>
+              <pre class="line-numbers"><code class="language-json">{
+  "mcpServers": {
+    "my-first-server": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--directory", "/absolute/path/to/mcp-demo",
+        "server.py"
+      ]
+    }
+  }
+}</code></pre>
+            </div>
+            <p>등록 후 Claude Desktop을 재시작하면 채팅에서 도구를 사용할 수 있다.</p>
+          </div>
+        </li>
+      </ol>
+
+      <div class="pipeline">
+        <div class="pipeline__stage"><div class="pipeline__stage-label">server.py<br>작성</div></div>
+        <div class="pipeline__arrow">&rarr;</div>
+        <div class="pipeline__stage"><div class="pipeline__stage-label">mcp dev<br>Inspector 테스트</div></div>
+        <div class="pipeline__arrow">&rarr;</div>
+        <div class="pipeline__stage"><div class="pipeline__stage-label">Claude Desktop<br>등록 및 실사용</div></div>
       </div>
     </section>
 
-    <!-- 다음 챕터 안내 -->
+    <!-- ============================================================ -->
+    <!-- 4. MCP Inspector 활용                                         -->
+    <!-- ============================================================ -->
+    <section>
+      <h2>MCP Inspector 상세 활용법</h2>
+      <p><code>uv run mcp dev server.py</code>를 실행하고 브라우저에서 Inspector를 열면 다음과 같은 인터페이스를 볼 수 있다.</p>
+
+      <h3>연결 상태 확인</h3>
+      <p>
+        Inspector 상단에 연결 상태가 표시된다. 초록색 "Connected"가 보이면 서버가 정상적으로 연결된 것이다.
+        Transport 유형(stdio)과 서버 이름("My First Server")이 함께 표시된다.
+        연결이 실패하면 빨간색 "Disconnected"가 나타나며, 서버 실행 로그를 확인해야 한다.
+      </p>
+
+      <h3>Tools 탭</h3>
+      <ol class="step-list">
+        <li class="step-list__item">
+          <span class="step-list__number">1</span>
+          <div class="step-list__content">
+            <strong>도구 목록 조회</strong>
+            <p>"List Tools" 버튼을 클릭하면 서버에 등록된 모든 도구 목록이 나타난다. 내부적으로 <code>tools/list</code> JSON-RPC 요청이 전송된다.</p>
+          </div>
+        </li>
+        <li class="step-list__item">
+          <span class="step-list__number">2</span>
+          <div class="step-list__content">
+            <strong>도구 선택 및 파라미터 입력</strong>
+            <p>도구를 선택하면 <code>inputSchema</code>를 기반으로 입력 폼이 자동 생성된다. 각 파라미터의 타입과 설명이 표시되며, 값을 직접 입력할 수 있다.</p>
+          </div>
+        </li>
+        <li class="step-list__item">
+          <span class="step-list__number">3</span>
+          <div class="step-list__content">
+            <strong>실행 및 결과 확인</strong>
+            <p>"Run Tool" 버튼을 클릭하면 <code>tools/call</code> 요청이 전송되고, 결과가 하단 패널에 JSON 형태로 표시된다.</p>
+          </div>
+        </li>
+      </ol>
+
+      <h3>Resources 탭</h3>
+      <p>
+        서버에 등록된 리소스 목록을 보여준다. "List Resources"를 클릭하면 정적 리소스와 리소스 템플릿이 구분되어 표시된다.
+        리소스를 선택하고 "Read Resource"를 클릭하면 <code>resources/read</code> 요청이 전송되어 내용을 확인할 수 있다.
+        URI 템플릿(<code>greeting://{name}</code>)의 경우 파라미터 입력란이 나타난다.
+      </p>
+
+      <h3>Prompts 탭</h3>
+      <p>
+        등록된 프롬프트 목록을 보여준다. 프롬프트를 선택하면 필요한 인자(arguments)를 입력할 수 있으며,
+        "Get Prompt"를 클릭하면 완성된 메시지 배열이 표시된다.
+        프롬프트가 LLM에게 전달될 때 어떤 형태가 되는지 미리 확인할 수 있다.
+      </p>
+
+      <h3>Notifications / Logs</h3>
+      <p>
+        Inspector 하단의 로그 패널에서는 서버와 클라이언트 사이에 오가는 모든 JSON-RPC 메시지를 실시간으로 볼 수 있다.
+        요청(Request)과 응답(Response), 알림(Notification)이 시간순으로 표시된다.
+        프로토콜 레벨에서 무슨 일이 일어나는지 직접 확인할 수 있으므로 디버깅에 매우 유용하다.
+      </p>
+
+      <div class="info-box info-box--tip">
+        <div class="info-box__title">TIP</div>
+        <p>Inspector에서 도구를 테스트할 때, 의도적으로 잘못된 타입의 값(예: 정수 파라미터에 문자열)을 입력해보자. FastMCP가 어떤 에러 메시지를 반환하는지 확인할 수 있다. 이 에러 처리 방식은 4장에서 자세히 다룬다.</p>
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- 5. 3가지 프리미티브를 모두 사용하는 종합 서버                  -->
+    <!-- ============================================================ -->
+    <section>
+      <h2>3가지 프리미티브를 모두 사용하는 서버</h2>
+      <p>도구(Tool), 리소스(Resource), 프롬프트(Prompt)를 모두 포함하는 종합 예제를 만들어보겠다.</p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python">from mcp.server.fastmcp import FastMCP
+
+mcp = FastMCP("Demo Server")
+
+# ── 도구 (Tool) ──────────────────────────────────────
+# LLM이 직접 호출하여 동작을 수행한다
+
+@mcp.tool()
+def add(a: int, b: int) -> int:
+    """두 정수를 더한다"""
+    return a + b
+
+@mcp.tool()
+def multiply(a: int, b: int) -> int:
+    """두 정수를 곱한다"""
+    return a * b
+
+@mcp.tool()
+async def fetch_title(url: str) -> str:
+    """URL에서 웹 페이지 제목을 가져온다"""
+    import httpx
+    async with httpx.AsyncClient() as client:
+        response = await client.get(url, follow_redirects=True)
+        # 간단한 제목 추출
+        html = response.text
+        start = html.find("&lt;title&gt;")
+        end = html.find("&lt;/title&gt;")
+        if start != -1 and end != -1:
+            return html[start + 7:end].strip()
+        return "제목을 찾을 수 없다"
+
+# ── 리소스 (Resource) ────────────────────────────────
+# 데이터를 URI로 노출한다. 읽기 전용.
+
+@mcp.resource("config://app")
+def get_app_config() -> dict:
+    """애플리케이션 설정 정보"""
+    return {
+        "app_name": "MCP Demo",
+        "version": "1.0.0",
+        "debug": True,
+        "max_retries": 3
+    }
+
+@mcp.resource("greeting://{name}")
+def get_greeting(name: str) -> str:
+    """개인화된 인사말을 반환한다"""
+    return f"안녕, {name}! MCP 서버에 온 것을 환영한다."
+
+@mcp.resource("stats://server")
+def get_server_stats() -> dict:
+    """서버 통계 정보"""
+    import datetime
+    return {
+        "status": "running",
+        "uptime": "동적 데이터",
+        "timestamp": datetime.datetime.now().isoformat(),
+        "registered_tools": 3,
+        "registered_resources": 3,
+        "registered_prompts": 2
+    }
+
+# ── 프롬프트 (Prompt) ───────────────────────────────
+# 재사용 가능한 프롬프트 템플릿
+
+@mcp.prompt()
+def review_code(code: str, language: str = "python") -> str:
+    """코드 리뷰를 요청하는 프롬프트"""
+    return f"""다음 {language} 코드를 리뷰해라.
+버그, 성능 이슈, 가독성 문제를 찾아서 개선안을 제시해라.
+
+```{language}
+{code}
+```"""
+
+@mcp.prompt()
+def explain_error(error_message: str) -> str:
+    """에러 메시지를 분석하는 프롬프트"""
+    return f"""다음 에러 메시지를 분석하고 해결 방법을 단계별로 설명해라.
+
+에러:
+{error_message}"""
+
+if __name__ == "__main__":
+    mcp.run()</code></pre>
+      </div>
+
+      <h3>각 프리미티브의 프로토콜 메시지</h3>
+      <p>위 서버에서 각 프리미티브가 어떤 JSON-RPC 메시지로 교환되는지 살펴보겠다.</p>
+
+      <h4>Tool &mdash; 도구 호출</h4>
+      <div class="protocol-msg protocol-msg--request">
+        <div class="protocol-msg__header"><span class="protocol-msg__arrow">&rarr;</span> REQUEST &mdash; tools/call</div>
+        <pre class="language-json"><code class="language-json">{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "multiply",
+    "arguments": { "a": 7, "b": 6 }
+  }
+}</code></pre>
+      </div>
+      <div class="protocol-msg protocol-msg--response">
+        <div class="protocol-msg__header"><span class="protocol-msg__arrow">&larr;</span> RESPONSE</div>
+        <pre class="language-json"><code class="language-json">{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "content": [{ "type": "text", "text": "42" }]
+  }
+}</code></pre>
+      </div>
+
+      <h4>Resource &mdash; 리소스 읽기</h4>
+      <div class="protocol-msg protocol-msg--request">
+        <div class="protocol-msg__header"><span class="protocol-msg__arrow">&rarr;</span> REQUEST &mdash; resources/read</div>
+        <pre class="language-json"><code class="language-json">{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "method": "resources/read",
+  "params": {
+    "uri": "greeting://Alice"
+  }
+}</code></pre>
+      </div>
+      <div class="protocol-msg protocol-msg--response">
+        <div class="protocol-msg__header"><span class="protocol-msg__arrow">&larr;</span> RESPONSE</div>
+        <pre class="language-json"><code class="language-json">{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "result": {
+    "contents": [
+      {
+        "uri": "greeting://Alice",
+        "mimeType": "text/plain",
+        "text": "안녕, Alice! MCP 서버에 온 것을 환영한다."
+      }
+    ]
+  }
+}</code></pre>
+      </div>
+
+      <h4>Prompt &mdash; 프롬프트 가져오기</h4>
+      <div class="protocol-msg protocol-msg--request">
+        <div class="protocol-msg__header"><span class="protocol-msg__arrow">&rarr;</span> REQUEST &mdash; prompts/get</div>
+        <pre class="language-json"><code class="language-json">{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "method": "prompts/get",
+  "params": {
+    "name": "review_code",
+    "arguments": {
+      "code": "def hello(): print('hi')",
+      "language": "python"
+    }
+  }
+}</code></pre>
+      </div>
+      <div class="protocol-msg protocol-msg--response">
+        <div class="protocol-msg__header"><span class="protocol-msg__arrow">&larr;</span> RESPONSE</div>
+        <pre class="language-json"><code class="language-json">{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "result": {
+    "messages": [
+      {
+        "role": "user",
+        "content": {
+          "type": "text",
+          "text": "다음 python 코드를 리뷰해라.\n버그, 성능 이슈, 가독성 문제를 찾아서 개선안을 제시해라.\n\n```python\ndef hello(): print('hi')\n```"
+        }
+      }
+    ]
+  }
+}</code></pre>
+      </div>
+
+      <div class="info-box info-box--info">
+        <div class="info-box__title">INFO</div>
+        <p>리소스 URI에서 <code>{name}</code> 같은 중괄호 부분은 경로 파라미터이다. <code>greeting://Alice</code>로 요청하면 <code>name</code>에 <code>"Alice"</code>가 전달된다. 중괄호가 없는 URI(<code>config://app</code>)는 정적 리소스로 항상 같은 함수가 호출된다.</p>
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- 6. Claude Desktop에서 테스트                                  -->
+    <!-- ============================================================ -->
+    <section>
+      <h2>Claude Desktop에서 테스트</h2>
+      <p>Inspector로 서버가 정상 동작하는 것을 확인했으면, 이제 실제 LLM 환경에서 테스트해보겠다.</p>
+
+      <ol class="step-list">
+        <li class="step-list__item">
+          <span class="step-list__number">1</span>
+          <div class="step-list__content">
+            <strong>설정 파일 작성</strong>
+            <p>Claude Desktop 설정 파일에 서버를 등록한다.</p>
+            <div class="code-block">
+              <button class="code-block__copy">복사</button>
+              <pre class="line-numbers"><code class="language-json">{
+  "mcpServers": {
+    "demo-server": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--directory", "/absolute/path/to/mcp-demo",
+        "server.py"
+      ]
+    }
+  }
+}</code></pre>
+            </div>
+          </div>
+        </li>
+        <li class="step-list__item">
+          <span class="step-list__number">2</span>
+          <div class="step-list__content">
+            <strong>Claude Desktop 재시작</strong>
+            <p>설정 파일을 저장하고 Claude Desktop을 완전히 종료한 후 다시 실행한다. 채팅 입력란에 망치 아이콘이 나타나면 연결 성공이다.</p>
+          </div>
+        </li>
+        <li class="step-list__item">
+          <span class="step-list__number">3</span>
+          <div class="step-list__content">
+            <strong>실제 사용 예시</strong>
+            <p>Claude에게 다음과 같이 요청해보자.</p>
+            <div class="info-box info-box--info">
+              <div class="info-box__title">사용자 프롬프트 예시</div>
+              <p>"12와 8을 더하고, 그 결과에 3을 곱해줘"</p>
+            </div>
+            <p>Claude는 먼저 <code>add(12, 8)</code>를 호출하여 20을 얻고, 이어서 <code>multiply(20, 3)</code>을 호출하여 60이라는 최종 결과를 반환한다. 도구 호출 과정이 채팅 UI에 표시된다.</p>
+          </div>
+        </li>
+      </ol>
+
+      <h3>트러블슈팅</h3>
+      <table>
+        <thead>
+          <tr><th>증상</th><th>해결 방법</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>서버가 안 뜸 (망치 아이콘 없음)</td>
+            <td>
+              <ol>
+                <li>JSON 문법 오류가 없는지 확인한다 (쉼표, 따옴표 등).</li>
+                <li><code>--directory</code> 경로가 절대 경로인지 확인한다.</li>
+                <li>터미널에서 <code>uv run --directory /path/to/project server.py</code>를 직접 실행하여 에러가 없는지 확인한다.</li>
+              </ol>
+            </td>
+          </tr>
+          <tr>
+            <td>도구가 안 보임</td>
+            <td>
+              <ol>
+                <li><code>server.py</code>에 <code>@mcp.tool()</code> 데코레이터가 있는지 확인한다.</li>
+                <li><code>if __name__ == "__main__": mcp.run()</code>이 있는지 확인한다.</li>
+                <li>파일명이 설정의 <code>args</code>와 일치하는지 확인한다.</li>
+              </ol>
+            </td>
+          </tr>
+          <tr>
+            <td>도구 호출 시 에러 발생</td>
+            <td>
+              <ol>
+                <li>필요한 패키지가 설치되어 있는지 확인한다 (<code>fetch_title</code>의 경우 <code>uv add httpx</code>).</li>
+                <li>서버 코드에 문법 에러가 없는지 확인한다.</li>
+                <li><code>mcp dev</code>로 Inspector에서 먼저 테스트해본다.</li>
+              </ol>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="deep-dive">
+        <div class="deep-dive__title">Deep Dive: LLM은 도구를 어떻게 선택하는가</div>
+        <p>
+          Claude Desktop이 MCP 서버에 연결하면, 먼저 <code>tools/list</code>를 호출하여 사용 가능한 도구 목록을 가져온다.
+          이 목록에는 각 도구의 <code>name</code>, <code>description</code>(docstring에서 추출), <code>inputSchema</code>가 포함된다.
+          LLM은 이 정보를 시스템 프롬프트의 일부로 받아, 사용자 요청에 적합한 도구가 있을 때 해당 도구를 호출하기로 "결정"한다.
+          따라서 <strong>도구의 이름과 설명(docstring)이 명확할수록 LLM이 올바르게 도구를 선택</strong>할 확률이 높아진다.
+        </p>
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- 7. 서버 초기화 옵션                                           -->
+    <!-- ============================================================ -->
+    <section>
+      <h2>서버 초기화 옵션</h2>
+      <p><code>FastMCP</code> 생성자에는 서버의 동작을 세밀하게 제어할 수 있는 여러 파라미터가 있다.</p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python">from mcp.server.fastmcp import FastMCP
+
+mcp = FastMCP(
+    name="Production Server",         # 서버 이름 (필수)
+    instructions="이 서버는 수학 계산 도구를 제공한다. "
+                 "add와 multiply 도구를 사용하여 기본 산술 연산을 수행할 수 있다.",
+)</code></pre>
+      </div>
+
+      <table>
+        <thead>
+          <tr><th>파라미터</th><th>타입</th><th>설명</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>name</code></td>
+            <td><code>str</code></td>
+            <td>서버의 고유 이름. <code>initialize</code> 응답의 <code>serverInfo.name</code>에 포함되어 클라이언트가 서버를 식별하는 데 사용된다.</td>
+          </tr>
+          <tr>
+            <td><code>instructions</code></td>
+            <td><code>str | None</code></td>
+            <td>LLM에게 전달되는 서버 사용 안내문. 이 문자열은 <code>initialize</code> 응답에 포함되어 LLM이 서버의 용도와 도구 사용법을 이해하는 데 도움을 준다. 잘 작성하면 LLM의 도구 선택 정확도가 높아진다.</td>
+          </tr>
+          <tr>
+            <td><code>lifespan</code></td>
+            <td><code>callable | None</code></td>
+            <td>서버의 시작/종료 시 실행할 비동기 컨텍스트 매니저. DB 연결 풀 초기화, 외부 서비스 인증 등 서버 수명 주기 관리에 사용된다. 고급 챕터에서 다룬다.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="concept-box">
+        <div class="concept-box__title">핵심 개념: instructions의 역할</div>
+        <p>
+          <code>instructions</code>는 서버 전체에 대한 "사용 설명서"를 LLM에게 전달하는 메커니즘이다.
+          개별 도구의 docstring이 "이 도구는 무엇을 하는가"를 설명한다면,
+          <code>instructions</code>는 "이 서버를 전반적으로 어떻게 활용해야 하는가"를 안내한다.
+          예를 들어, 도구 호출 순서, 주의사항, 데이터 형식 규칙 등을 기술할 수 있다.
+        </p>
+      </div>
+
+      <h3>mcp.run() 옵션</h3>
+      <p><code>mcp.run()</code>에는 Transport 관련 옵션을 지정할 수 있다.</p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python"># 기본: stdio 모드 (Claude Desktop, MCP Inspector용)
+mcp.run()
+
+# SSE 모드: 원격 클라이언트가 HTTP로 연결 (네트워크 배포 시)
+mcp.run(transport="sse")
+
+# Streamable HTTP 모드: 최신 MCP 스펙 (2025+)
+mcp.run(transport="streamable-http")</code></pre>
+      </div>
+
+      <div class="info-box info-box--info">
+        <div class="info-box__title">INFO</div>
+        <p>로컬 개발 및 Claude Desktop 연동에서는 기본 <code>stdio</code> 모드를 사용한다. <code>sse</code>와 <code>streamable-http</code>는 서버를 네트워크에 배포할 때 사용하며, 고급 챕터에서 다룬다.</p>
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- 8. 전체 흐름 정리                                             -->
+    <!-- ============================================================ -->
+    <section>
+      <h2>전체 흐름 정리</h2>
+
+      <div class="mermaid-wrapper">
+        <pre class="mermaid">
+sequenceDiagram
+    participant Dev as 개발자
+    participant Server as MCP 서버
+    participant Inspector as MCP Inspector
+    participant Claude as Claude Desktop
+
+    Dev->>Server: server.py 작성
+    Dev->>Inspector: uv run mcp dev server.py
+    Inspector->>Server: initialize
+    Server-->>Inspector: serverInfo + capabilities
+    Inspector->>Server: tools/list
+    Server-->>Inspector: 도구 목록 (name, schema)
+    Dev->>Inspector: 도구 테스트 (파라미터 입력)
+    Inspector->>Server: tools/call
+    Server-->>Inspector: 결과 반환
+    Note over Dev,Inspector: 테스트 완료 후
+    Dev->>Claude: claude_desktop_config.json 등록
+    Claude->>Server: initialize + tools/list
+    Note over Claude,Server: LLM이 도구를 직접 호출
+        </pre>
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- 9. 다음 단계                                                  -->
+    <!-- ============================================================ -->
     <section>
       <h2>다음 단계</h2>
       <p>
-        첫 번째 MCP 서버를 성공적으로 만들고 실행해보았다.
-        다음 챕터에서는 도구(Tools)의 다양한 기능과 패턴을 심도 있게 다룬다.
-        비동기 도구, 에러 처리, Context 활용 등을 배울 것이다.
+        첫 번째 MCP 서버를 만들고 Inspector와 Claude Desktop에서 테스트하는 과정을 모두 살펴보았다.
+        다음 챕터에서는 <strong>도구(Tools)</strong>를 심도 있게 다룬다.
+        비동기 도구, 에러 처리, Context 객체 활용, 복잡한 반환 타입, Pydantic 모델을 활용한 입력 검증 등
+        실전에서 필요한 도구 개발 패턴을 배울 것이다.
       </p>
     </section>
 
     <nav class="page-nav"></nav>
   </main>
 </div>
-
 <script src="../js/nav.js?v=2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-json.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad:true, theme:'neutral', flowchart:{useMaxWidth:true}});</script>
 </body>
 </html>

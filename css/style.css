@@ -405,6 +405,336 @@ code[class*="language-"] {
 .info-box--warning .info-box__title { color: #d97706; }
 .info-box--info .info-box__title { color: #2563eb; }
 
+/* ===== Concept Box — 핵심 개념 강조 ===== */
+.concept-box {
+  background: linear-gradient(135deg, #f8faff 0%, #eef2ff 100%);
+  border: 2px solid #c7d2fe;
+  border-radius: 12px;
+  padding: 24px 28px;
+  margin-bottom: 24px;
+  position: relative;
+}
+
+.concept-box__title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #4338ca;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.concept-box__title::before {
+  content: '';
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  background: #4338ca;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.concept-box__title::after {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  background: #ffffff;
+  border-radius: 50%;
+  position: absolute;
+  left: 34px;
+  top: 30px;
+}
+
+.concept-box p:last-child {
+  margin-bottom: 0;
+}
+
+/* ===== Deep-dive Box — 심화 설명 ===== */
+.deep-dive {
+  background: linear-gradient(135deg, #fdf4ff 0%, #fae8ff 100%);
+  border: 2px solid #e9d5ff;
+  border-radius: 12px;
+  padding: 24px 28px;
+  margin-bottom: 24px;
+}
+
+.deep-dive__title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #7c3aed;
+  margin-bottom: 8px;
+}
+
+.deep-dive p:last-child {
+  margin-bottom: 0;
+}
+
+/* ===== Step List — 단계별 흐름 ===== */
+.step-list {
+  list-style: none;
+  padding-left: 0;
+  margin-bottom: 24px;
+  counter-reset: step-counter;
+}
+
+.step-list__item {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 0;
+  padding: 16px 0;
+  position: relative;
+}
+
+.step-list__item:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  left: 17px;
+  top: 52px;
+  bottom: -4px;
+  width: 2px;
+  background: linear-gradient(to bottom, #c7d2fe, #e0e7ff);
+}
+
+.step-list__number {
+  counter-increment: step-counter;
+  width: 36px;
+  height: 36px;
+  background: linear-gradient(135deg, #4f46e5, #6366f1);
+  color: #ffffff;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 700;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 1;
+}
+
+.step-list__content {
+  flex: 1;
+  padding-top: 6px;
+}
+
+.step-list__content strong {
+  display: block;
+  font-size: 16px;
+  margin-bottom: 4px;
+}
+
+/* ===== Comparison Grid — 비교 패널 ===== */
+.comparison-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.comparison-panel {
+  border: 1px solid #e0e0e0;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.comparison-panel__header {
+  padding: 10px 16px;
+  font-size: 14px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.comparison-panel--a .comparison-panel__header {
+  background: #fef2f2;
+  color: #dc2626;
+  border-bottom: 2px solid #fca5a5;
+}
+
+.comparison-panel--b .comparison-panel__header {
+  background: #f0fdf4;
+  color: #16a34a;
+  border-bottom: 2px solid #86efac;
+}
+
+.comparison-panel__body {
+  padding: 16px;
+  font-size: 14px;
+}
+
+.comparison-panel__body pre[class*="language-"] {
+  margin-bottom: 0;
+  border: none;
+  border-radius: 0;
+}
+
+/* ===== Protocol Message — JSON-RPC 메시지 표시 ===== */
+.protocol-msg {
+  border-radius: 10px;
+  margin-bottom: 16px;
+  overflow: hidden;
+  border: 1px solid #e0e0e0;
+}
+
+.protocol-msg__header {
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.protocol-msg__arrow {
+  font-size: 14px;
+}
+
+.protocol-msg--request .protocol-msg__header {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border-bottom: 1px solid #bfdbfe;
+}
+
+.protocol-msg--response .protocol-msg__header {
+  background: #f0fdf4;
+  color: #15803d;
+  border-bottom: 1px solid #bbf7d0;
+}
+
+.protocol-msg--notification .protocol-msg__header {
+  background: #fefce8;
+  color: #a16207;
+  border-bottom: 1px solid #fde68a;
+}
+
+.protocol-msg pre[class*="language-"] {
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  font-size: 13px;
+}
+
+/* ===== Pipeline Visual — 파이프라인 흐름도 ===== */
+.pipeline {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin-bottom: 24px;
+  overflow-x: auto;
+  padding: 16px 0;
+}
+
+.pipeline__stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px 20px;
+  background: #f8fafc;
+  border: 2px solid #e2e8f0;
+  border-radius: 10px;
+  min-width: 110px;
+  text-align: center;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.pipeline__stage--active {
+  background: linear-gradient(135deg, #eff6ff, #dbeafe);
+  border-color: #3b82f6;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.15);
+}
+
+.pipeline__stage-icon {
+  font-size: 24px;
+  margin-bottom: 6px;
+}
+
+.pipeline__stage-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #475569;
+}
+
+.pipeline__stage--active .pipeline__stage-label {
+  color: #1d4ed8;
+}
+
+.pipeline__arrow {
+  font-size: 18px;
+  color: #94a3b8;
+  flex-shrink: 0;
+  padding: 0 4px;
+}
+
+/* ===== Code Tabs — 탭 코드 블록 ===== */
+.code-tabs {
+  margin-bottom: 24px;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.code-tabs__nav {
+  display: flex;
+  background: #f5f5f5;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.code-tabs__tab {
+  padding: 8px 20px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #666;
+  cursor: pointer;
+  border: none;
+  background: none;
+  border-bottom: 2px solid transparent;
+  transition: all 0.15s ease;
+}
+
+.code-tabs__tab:hover {
+  color: #333;
+  background: #eee;
+}
+
+.code-tabs__tab--active {
+  color: #0066cc;
+  border-bottom-color: #0066cc;
+  background: #ffffff;
+}
+
+.code-tabs__panel {
+  display: none;
+}
+
+.code-tabs__panel--active {
+  display: block;
+}
+
+.code-tabs__panel pre[class*="language-"] {
+  margin: 0;
+  border: none;
+  border-radius: 0;
+}
+
+/* ===== Enhanced Table ===== */
+.main table.table--striped tr:nth-child(even) {
+  background: #f8fafc;
+}
+
+.main table.table--striped tr:hover {
+  background: #eef2ff;
+}
+
+.main table.table--compact th,
+.main table.table--compact td {
+  padding: 8px 12px;
+  font-size: 13px;
+}
+
 /* ===== Diagram ===== */
 .diagram {
   background: #fafafa;

@@ -9,342 +9,587 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.css">
 </head>
 <body>
-
 <header class="site-header">
-  <button class="hamburger" aria-label="메뉴">
-    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-  </button>
+  <button class="hamburger" aria-label="메뉴"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
   <a href="../index.html" class="site-header__title"><span>MCP</span> Python SDK 튜토리얼</a>
   <span class="site-header__badge">v1.12.x</span>
 </header>
-
 <div class="layout">
   <nav class="sidebar"></nav>
   <main class="main">
     <span class="chapter-badge chapter-badge--basic">기본 과정</span>
     <h1>Chapter 7. Transport</h1>
-    <p class="chapter-subtitle">MCP의 통신 방식인 Transport를 이해하고 선택한다</p>
+    <p class="chapter-subtitle">stdio와 Streamable HTTP의 내부 구조, JSON-RPC 메시지 흐름, 그리고 프로덕션 배포 전략</p>
 
-    <!-- 1. Transport란? -->
+    <!-- ============================================================ -->
+    <!-- 7.1 Transport란? -->
+    <!-- ============================================================ -->
     <section>
       <h2 id="what-is-transport">7.1 Transport란?</h2>
+
+      <div class="concept-box">
+        <div class="concept-box__title">핵심 개념: Transport 계층</div>
+        <p>
+          <strong>Transport</strong>는 MCP 아키텍처에서 가장 아래쪽에 위치하는 <strong>물리적 메시지 전달 계층</strong>이다.
+          애플리케이션(도구 호출, 리소스 읽기 등)이 만들어 낸 JSON-RPC 메시지를 네트워크나 프로세스 간 파이프를 통해 상대편으로 실어 나르는 역할을 한다.
+          Transport는 메시지의 의미를 해석하지 않으며, 오직 <em>바이트를 전달</em>하는 데만 관심을 가진다.
+        </p>
+      </div>
+
       <p>
-        <strong>Transport</strong>는 MCP 서버와 클라이언트 사이의 <strong>통신 계층</strong>이다.
-        프로토콜 메시지(JSON-RPC)를 어떤 방식으로 주고받을지 정의하며, MCP의 핵심 기능과는 독립적으로 동작한다.
+        MCP의 계층 구조를 이해하면 Transport의 위치가 명확해진다.
+        최상위에는 MCP 서버의 비즈니스 로직(도구, 리소스, 프롬프트)이 있고, 중간에 JSON-RPC 프로토콜이 메시지 포맷을 정의하며, 최하위에서 Transport가 메시지를 물리적으로 운반한다.
       </p>
-      <p>
-        MCP Python SDK는 현재 두 가지 Transport를 지원한다.
-      </p>
-      <ul>
-        <li><strong>stdio</strong> — 표준 입출력(stdin/stdout)을 통한 통신</li>
-        <li><strong>Streamable HTTP</strong> — HTTP 기반의 스트리밍 통신</li>
-      </ul>
 
       <div class="mermaid-wrapper">
 <pre class="mermaid">
-graph LR
-    subgraph Client ["MCP 클라이언트"]
-        CT["Tools"]
-        CR["Resources"]
-        CP["Prompts"]
+graph TB
+    subgraph APP ["Application 계층"]
+        direction LR
+        T["Tools"] ~~~ R["Resources"] ~~~ P["Prompts"]
     end
-    subgraph Server ["MCP 서버"]
-        ST["Tools"]
-        SR["Resources"]
-        SP["Prompts"]
+    subgraph PROTO ["Protocol 계층"]
+        JSONRPC["JSON-RPC 2.0\n메시지 포맷 정의\n(Request / Response / Notification)"]
     end
-    Client <-->|"Transport (통신 계층)\n- stdio: 로컬 프로세스 간 통신\n- Streamable HTTP: 원격 HTTP 기반 통신"| Server
+    subgraph TRANS ["Transport 계층"]
+        direction LR
+        STDIO["stdio\n(stdin/stdout)"] ~~~ HTTP["Streamable HTTP\n(HTTP POST + SSE)"]
+    end
+    APP --> PROTO --> TRANS
 </pre>
       </div>
-    </section>
 
-    <!-- 2. stdio Transport -->
-    <section>
-      <h2 id="stdio">7.2 stdio Transport</h2>
-      <p>
-        <strong>stdio Transport</strong>는 표준 입출력(stdin/stdout)을 통해 메시지를 교환하는 방식이다.
-        클라이언트가 서버 프로세스를 직접 실행하고, 프로세스의 stdin/stdout 파이프를 통해 JSON-RPC 메시지를 주고받는다.
-      </p>
-
-      <h3>사용 방법</h3>
-      <div class="code-block">
-        <button class="code-block__copy">복사</button>
-        <pre class="line-numbers"><code class="language-python">from mcp.server.fastmcp import FastMCP
-
-mcp = FastMCP("my-server")
-
-# 도구 등록
-@mcp.tool()
-def hello(name: str) -> str:
-    """인사 메시지를 반환한다"""
-    return f"안녕하세요, {name}!"
-
-# stdio로 실행 (기본값)
-mcp.run()
-
-# 또는 명시적으로 지정
-mcp.run(transport="stdio")</code></pre>
-      </div>
-
-      <h3>Claude Desktop 설정</h3>
-      <p>Claude Desktop에서 stdio 서버를 연결하려면 <code>claude_desktop_config.json</code>에 다음과 같이 설정한다.</p>
-      <div class="code-block">
-        <button class="code-block__copy">복사</button>
-        <pre class="line-numbers"><code class="language-json">{
-  "mcpServers": {
-    "my-server": {
-      "command": "uv",
-      "args": ["run", "/path/to/server.py"]
-    }
-  }
-}</code></pre>
-      </div>
-
-      <h3>stdio의 특징</h3>
+      <p>MCP Python SDK는 두 가지 Transport를 기본 제공한다.</p>
       <table>
         <thead>
-          <tr>
-            <th>항목</th>
-            <th>설명</th>
-          </tr>
+          <tr><th>Transport</th><th>통신 채널</th><th>대표 사용처</th></tr>
         </thead>
         <tbody>
           <tr>
-            <td>통신 방식</td>
-            <td>프로세스의 stdin/stdout 파이프</td>
+            <td><strong>stdio</strong></td>
+            <td>프로세스의 stdin / stdout 파이프</td>
+            <td>Claude Desktop, IDE 플러그인, 로컬 CLI</td>
           </tr>
           <tr>
-            <td>사용 시나리오</td>
-            <td>로컬 통합, Claude Desktop, IDE 플러그인</td>
-          </tr>
-          <tr>
-            <td>네트워크</td>
-            <td>불필요 (로컬 프로세스 간 통신)</td>
-          </tr>
-          <tr>
-            <td>설정 복잡도</td>
-            <td>매우 낮음</td>
-          </tr>
-          <tr>
-            <td>다중 클라이언트</td>
-            <td>불가 (1:1 연결)</td>
-          </tr>
-          <tr>
-            <td>장점</td>
-            <td>설정이 간단하고 보안 걱정이 적다</td>
-          </tr>
-          <tr>
-            <td>단점</td>
-            <td>원격 접근 불가, 클라이언트당 별도 프로세스 필요</td>
-          </tr>
-        </tbody>
-      </table>
-
-      <div class="info-box info-box--tip">
-        <div class="info-box__title">TIP</div>
-        <p>stdio Transport를 사용할 때는 서버 코드에서 <code>print()</code> 문을 사용하지 않도록 주의한다. stdout이 MCP 통신 채널로 사용되므로, 디버그 출력은 반드시 <code>stderr</code>이나 로깅 모듈을 사용해야 한다.</p>
-      </div>
-    </section>
-
-    <!-- 3. Streamable HTTP Transport -->
-    <section>
-      <h2 id="streamable-http">7.3 Streamable HTTP Transport</h2>
-      <p>
-        <strong>Streamable HTTP Transport</strong>는 HTTP를 기반으로 메시지를 교환하는 방식이다.
-        서버가 HTTP 엔드포인트를 열고, 클라이언트가 HTTP 요청으로 연결한다.
-        원격 서버 배포, 다중 클라이언트 접속이 필요한 경우에 사용한다.
-      </p>
-
-      <h3>기본 사용법</h3>
-      <div class="code-block">
-        <button class="code-block__copy">복사</button>
-        <pre class="line-numbers"><code class="language-python">from mcp.server.fastmcp import FastMCP
-
-mcp = FastMCP("my-server")
-
-@mcp.tool()
-def hello(name: str) -> str:
-    """인사 메시지를 반환한다"""
-    return f"안녕하세요, {name}!"
-
-# Streamable HTTP로 실행
-mcp.run(transport="streamable-http", host="0.0.0.0", port=8000)</code></pre>
-      </div>
-
-      <p>위 코드를 실행하면 <code>http://0.0.0.0:8000/mcp</code>에 MCP 엔드포인트가 열린다.</p>
-
-      <h3>설정 옵션</h3>
-      <div class="code-block">
-        <button class="code-block__copy">복사</button>
-        <pre class="line-numbers"><code class="language-python"># 모든 옵션을 명시적으로 지정
-mcp.run(
-    transport="streamable-http",
-    host="0.0.0.0",        # 바인딩할 호스트 (기본: "0.0.0.0")
-    port=8000,             # 바인딩할 포트 (기본: 8000)
-    path="/mcp",           # 엔드포인트 경로 (기본: "/mcp")
-)</code></pre>
-      </div>
-
-      <table>
-        <thead>
-          <tr>
-            <th>옵션</th>
-            <th>기본값</th>
-            <th>설명</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td><code>host</code></td>
-            <td><code>"0.0.0.0"</code></td>
-            <td>서버가 바인딩할 네트워크 인터페이스</td>
-          </tr>
-          <tr>
-            <td><code>port</code></td>
-            <td><code>8000</code></td>
-            <td>서버가 리스닝할 포트 번호</td>
-          </tr>
-          <tr>
-            <td><code>path</code></td>
-            <td><code>"/mcp"</code></td>
-            <td>MCP 엔드포인트 경로</td>
-          </tr>
-        </tbody>
-      </table>
-
-      <h3>Streamable HTTP의 특징</h3>
-      <table>
-        <thead>
-          <tr>
-            <th>항목</th>
-            <th>설명</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>통신 방식</td>
-            <td>HTTP POST + Server-Sent Events(SSE)</td>
-          </tr>
-          <tr>
-            <td>사용 시나리오</td>
-            <td>원격 배포, 웹 서비스, 클라우드 환경</td>
-          </tr>
-          <tr>
-            <td>네트워크</td>
-            <td>필요</td>
-          </tr>
-          <tr>
-            <td>설정 복잡도</td>
-            <td>중간</td>
-          </tr>
-          <tr>
-            <td>다중 클라이언트</td>
-            <td>가능</td>
-          </tr>
-          <tr>
-            <td>장점</td>
-            <td>원격 접근 가능, 다중 클라이언트 지원, 표준 HTTP 인프라 활용</td>
-          </tr>
-          <tr>
-            <td>단점</td>
-            <td>네트워크 설정 필요, 보안(인증/HTTPS) 별도 구성 필요</td>
+            <td><strong>Streamable HTTP</strong></td>
+            <td>HTTP POST + Server-Sent Events</td>
+            <td>원격 서버, 웹 서비스, 클라우드 배포</td>
           </tr>
         </tbody>
       </table>
 
       <div class="info-box info-box--warning">
         <div class="info-box__title">WARNING</div>
-        <p><strong>SSE(Server-Sent Events) Transport는 deprecated되었으며 Streamable HTTP로 대체되었다.</strong> 기존에 <code>transport="sse"</code>를 사용하던 코드는 <code>transport="streamable-http"</code>로 마이그레이션해야 한다.</p>
+        <p>이전에 지원되던 <code>sse</code> Transport(<code>transport="sse"</code>)는 <strong>deprecated</strong> 되었다. 모든 SSE 기반 통신은 <code>streamable-http</code>로 마이그레이션해야 한다.</p>
       </div>
     </section>
 
-    <!-- 4. Transport 선택 가이드 -->
+    <!-- ============================================================ -->
+    <!-- 7.2 JSON-RPC 메시지 구조 -->
+    <!-- ============================================================ -->
     <section>
-      <h2 id="comparison">7.4 Transport 선택 가이드</h2>
+      <h2 id="json-rpc">7.2 JSON-RPC 메시지 구조</h2>
       <p>
-        어떤 Transport를 선택할지는 서버의 배포 환경과 요구사항에 따라 결정한다.
-        다음 비교표를 참고하여 적합한 Transport를 선택하자.
+        MCP의 모든 통신은 <strong>JSON-RPC 2.0</strong> 규격을 따른다.
+        Transport가 운반하는 것은 결국 이 JSON-RPC 메시지이므로, 메시지 구조를 정확히 이해해야 디버깅과 커스텀 클라이언트 구현이 가능하다.
+        JSON-RPC에는 세 가지 메시지 유형이 있다.
       </p>
 
-      <table>
-        <thead>
-          <tr>
-            <th>항목</th>
-            <th>stdio</th>
-            <th>Streamable HTTP</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>사용 시나리오</td>
-            <td>로컬 통합</td>
-            <td>원격 배포</td>
-          </tr>
-          <tr>
-            <td>설정 복잡도</td>
-            <td>낮음</td>
-            <td>중간</td>
-          </tr>
-          <tr>
-            <td>네트워크</td>
-            <td>불필요</td>
-            <td>필요</td>
-          </tr>
-          <tr>
-            <td>다중 클라이언트</td>
-            <td>불가</td>
-            <td>가능</td>
-          </tr>
-          <tr>
-            <td>보안</td>
-            <td>프로세스 격리</td>
-            <td>별도 인증 구성 필요</td>
-          </tr>
-          <tr>
-            <td>배포</td>
-            <td>로컬 전용</td>
-            <td>Docker, 클라우드 등 유연</td>
-          </tr>
-          <tr>
-            <td>대표 클라이언트</td>
-            <td>Claude Desktop, IDE</td>
-            <td>웹 앱, 원격 클라이언트</td>
-          </tr>
-        </tbody>
-      </table>
+      <h3>Request (요청)</h3>
+      <p>클라이언트가 서버에 작업을 요청할 때 보내는 메시지이다. <code>id</code> 필드가 반드시 포함되며, 서버는 동일한 <code>id</code>로 응답한다.</p>
+      <div class="protocol-msg protocol-msg--request">
+        <div class="protocol-msg__header">
+          <span class="protocol-msg__arrow">&rarr;</span> Request &mdash; 클라이언트 &rarr; 서버
+        </div>
+        <pre class="line-numbers"><code class="language-json">{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "add",
+    "arguments": { "a": 5, "b": 3 }
+  }
+}</code></pre>
+      </div>
+
+      <h3>Response (응답)</h3>
+      <p>서버가 요청에 대해 반환하는 메시지이다. 성공 시 <code>result</code>, 실패 시 <code>error</code> 필드를 포함한다.</p>
+
+      <div class="comparison-grid">
+        <div class="comparison-panel comparison-panel--b">
+          <div class="comparison-panel__header">성공 응답 (result)</div>
+          <div class="comparison-panel__body">
+            <pre class="line-numbers"><code class="language-json">{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "8"
+      }
+    ]
+  }
+}</code></pre>
+          </div>
+        </div>
+        <div class="comparison-panel comparison-panel--a">
+          <div class="comparison-panel__header">에러 응답 (error)</div>
+          <div class="comparison-panel__body">
+            <pre class="line-numbers"><code class="language-json">{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "error": {
+    "code": -32602,
+    "message": "Invalid params",
+    "data": "Missing required argument: a"
+  }
+}</code></pre>
+          </div>
+        </div>
+      </div>
+
+      <h3>Notification (알림)</h3>
+      <p>응답을 기대하지 않는 단방향 메시지이다. <code>id</code> 필드가 <strong>없다</strong>는 것이 핵심적인 차이이다.</p>
+      <div class="protocol-msg protocol-msg--notification">
+        <div class="protocol-msg__header">
+          <span class="protocol-msg__arrow">&darr;</span> Notification &mdash; 서버 &rarr; 클라이언트 (응답 없음)
+        </div>
+        <pre class="line-numbers"><code class="language-json">{
+  "jsonrpc": "2.0",
+  "method": "notifications/tools/list_changed",
+  "params": {}
+}</code></pre>
+      </div>
+
+      <div class="deep-dive">
+        <div class="deep-dive__title">Deep Dive: JSON-RPC 에러 코드</div>
+        <p>JSON-RPC 2.0은 표준 에러 코드를 정의하며, MCP에서도 동일하게 사용된다.</p>
+        <table>
+          <thead>
+            <tr><th>코드</th><th>이름</th><th>의미</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>-32700</code></td><td>Parse error</td><td>JSON 파싱 실패 (잘못된 JSON)</td></tr>
+            <tr><td><code>-32600</code></td><td>Invalid Request</td><td>유효한 JSON이지만 JSON-RPC 규격에 맞지 않음</td></tr>
+            <tr><td><code>-32601</code></td><td>Method not found</td><td>요청한 메서드가 존재하지 않음</td></tr>
+            <tr><td><code>-32602</code></td><td>Invalid params</td><td>메서드 파라미터가 올바르지 않음</td></tr>
+            <tr><td><code>-32603</code></td><td>Internal error</td><td>서버 내부 오류</td></tr>
+            <tr><td><code>-32000</code> ~ <code>-32099</code></td><td>Server error</td><td>구현에 따른 커스텀 서버 에러</td></tr>
+          </tbody>
+        </table>
+        <p>도구 실행 자체의 에러(예: 계산 실패)는 JSON-RPC 에러가 아니라, <code>result</code> 안에 <code>isError: true</code>로 반환된다는 점에 주의한다.</p>
+      </div>
+
+      <h3>메시지 흐름 전체 예시</h3>
+      <p>클라이언트가 서버에 연결하여 도구를 호출하는 전체 흐름을 살펴보자.</p>
+      <div class="mermaid-wrapper">
+<pre class="mermaid">
+sequenceDiagram
+    participant C as Client
+    participant S as Server
+
+    C->>S: initialize (id:1)
+    S-->>C: result: capabilities (id:1)
+    C->>S: notifications/initialized
+    Note right of S: Notification이므로 응답 없음
+
+    C->>S: tools/list (id:2)
+    S-->>C: result: [add, multiply, ...] (id:2)
+
+    C->>S: tools/call "add" (id:3)
+    S-->>C: result: "8" (id:3)
+</pre>
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- 7.3 stdio Transport — 심화 -->
+    <!-- ============================================================ -->
+    <section>
+      <h2 id="stdio">7.3 stdio Transport &mdash; 심화</h2>
+
+      <div class="concept-box">
+        <div class="concept-box__title">핵심 개념: stdio Transport</div>
+        <p>
+          stdio Transport는 클라이언트가 서버를 <strong>자식 프로세스(child process)</strong>로 실행하고,
+          해당 프로세스의 <strong>stdin/stdout 파이프</strong>를 통해 JSON-RPC 메시지를 줄 단위(newline-delimited)로 교환하는 방식이다.
+          네트워크가 필요 없고, 프로세스 격리로 보안이 단순하다.
+        </p>
+      </div>
+
+      <h3>내부 작동 원리</h3>
+      <ol class="step-list">
+        <li class="step-list__item">
+          <span class="step-list__number">1</span>
+          <div class="step-list__content">
+            <strong>프로세스 시작</strong>
+            클라이언트(예: Claude Desktop)가 설정된 <code>command</code>와 <code>args</code>로 서버 프로세스를 spawn한다.
+          </div>
+        </li>
+        <li class="step-list__item">
+          <span class="step-list__number">2</span>
+          <div class="step-list__content">
+            <strong>파이프 연결</strong>
+            클라이언트의 출력이 서버의 stdin으로, 서버의 stdout이 클라이언트의 입력으로 연결된다.
+          </div>
+        </li>
+        <li class="step-list__item">
+          <span class="step-list__number">3</span>
+          <div class="step-list__content">
+            <strong>메시지 교환</strong>
+            각 JSON-RPC 메시지는 한 줄의 JSON 문자열로 전송된다. 줄바꿈(<code>\n</code>)이 메시지 구분자 역할을 한다.
+          </div>
+        </li>
+        <li class="step-list__item">
+          <span class="step-list__number">4</span>
+          <div class="step-list__content">
+            <strong>종료</strong>
+            클라이언트가 stdin을 닫거나 프로세스를 종료(kill)하면 연결이 끊어진다.
+          </div>
+        </li>
+      </ol>
 
       <div class="mermaid-wrapper">
 <pre class="mermaid">
-graph TD
-    Q{"서버를 어디서 실행하는가?"}
-    Q -->|"로컬 (같은 머신)"| STDIO["stdio 선택"]
-    Q -->|"원격 (다른 머신 / 클라우드)"| HTTP["Streamable HTTP 선택"]
-    STDIO --> S1["Claude Desktop, IDE 플러그인"]
-    STDIO --> S2["설정 간단, 보안 걱정 적음"]
-    HTTP --> H1["웹 서비스, API 서버"]
-    HTTP --> H2["다중 클라이언트 지원 필요"]
-    HTTP --> H3["HTTPS + 인증 설정 권장"]
+sequenceDiagram
+    participant Host as 클라이언트 (Host)
+    participant Proc as 서버 프로세스
+
+    Host->>Proc: spawn("uv", ["run", "server.py"])
+    Note over Host,Proc: stdin/stdout 파이프 연결
+
+    Host->>Proc: stdin: {"jsonrpc":"2.0","id":1,"method":"initialize",...}
+    Proc-->>Host: stdout: {"jsonrpc":"2.0","id":1,"result":{...}}
+
+    Host->>Proc: stdin: {"jsonrpc":"2.0","id":2,"method":"tools/call",...}
+    Proc-->>Host: stdout: {"jsonrpc":"2.0","id":2,"result":{...}}
+
+    Note over Proc: stderr: 디버그 로그 (프로토콜에 영향 없음)
+
+    Host->>Proc: close stdin / kill process
 </pre>
       </div>
 
-      <div class="info-box info-box--tip">
-        <div class="info-box__title">TIP</div>
-        <p>개발 중에는 stdio를 사용하고, 프로덕션 배포 시에는 Streamable HTTP로 전환하는 전략이 일반적이다. MCP 서버 코드를 변경할 필요 없이 <code>mcp.run()</code>의 <code>transport</code> 파라미터만 바꾸면 된다.</p>
+      <h3>왜 print()를 쓰면 안 되는가</h3>
+      <div class="info-box info-box--warning">
+        <div class="info-box__title">WARNING: stdout 오염 문제</div>
+        <p>
+          stdio Transport에서 <strong>stdout은 프로토콜 전용 채널</strong>이다.
+          서버 코드에서 <code>print()</code>를 호출하면 JSON-RPC 메시지가 아닌 텍스트가 stdout에 섞여 들어가고,
+          클라이언트는 이를 파싱하려다 실패하여 <strong>연결이 즉시 끊어진다</strong>.
+        </p>
+      </div>
+
+      <div class="comparison-grid">
+        <div class="comparison-panel comparison-panel--a">
+          <div class="comparison-panel__header">잘못된 예 (print 사용)</div>
+          <div class="comparison-panel__body">
+            <pre class="line-numbers"><code class="language-python">@mcp.tool()
+def calculate(expr: str) -> str:
+    # stdout에 출력 → 프로토콜 오염!
+    print(f"계산 요청: {expr}")
+    return str(eval(expr))</code></pre>
+          </div>
+        </div>
+        <div class="comparison-panel comparison-panel--b">
+          <div class="comparison-panel__header">올바른 예 (stderr 또는 logging)</div>
+          <div class="comparison-panel__body">
+            <pre class="line-numbers"><code class="language-python">import sys
+import logging
+
+logger = logging.getLogger(__name__)
+
+@mcp.tool()
+def calculate(expr: str) -> str:
+    # stderr로 출력 (프로토콜에 영향 없음)
+    print(f"계산 요청: {expr}", file=sys.stderr)
+    # 또는 logging 모듈 사용
+    logger.info(f"계산 요청: {expr}")
+    return str(eval(expr))</code></pre>
+          </div>
+        </div>
+      </div>
+
+      <h3>기본 서버 코드</h3>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python">from mcp.server.fastmcp import FastMCP
+
+mcp = FastMCP("my-server")
+
+@mcp.tool()
+def hello(name: str) -> str:
+    """인사 메시지를 반환한다"""
+    return f"안녕, {name}!"
+
+# stdio로 실행 (기본값)
+mcp.run()
+
+# 또는 명시적으로 지정
+# mcp.run(transport="stdio")</code></pre>
+      </div>
+
+      <h3>클라이언트 설정: Claude Desktop vs Cursor</h3>
+      <div class="code-tabs">
+        <div class="code-tabs__nav">
+          <button class="code-tabs__tab code-tabs__tab--active" onclick="switchTab(event, 'tab-claude-desktop')">Claude Desktop</button>
+          <button class="code-tabs__tab" onclick="switchTab(event, 'tab-cursor')">Cursor</button>
+          <button class="code-tabs__tab" onclick="switchTab(event, 'tab-vscode')">VS Code (Copilot)</button>
+        </div>
+        <div id="tab-claude-desktop" class="code-tabs__panel code-tabs__panel--active">
+          <pre class="line-numbers"><code class="language-json">{
+  "mcpServers": {
+    "my-server": {
+      "command": "uv",
+      "args": ["run", "/absolute/path/to/server.py"],
+      "env": {
+        "API_KEY": "sk-...",
+        "DATABASE_URL": "postgresql://localhost/mydb"
+      }
+    }
+  }
+}</code></pre>
+        </div>
+        <div id="tab-cursor" class="code-tabs__panel">
+          <pre class="line-numbers"><code class="language-json">{
+  "mcpServers": {
+    "my-server": {
+      "command": "uv",
+      "args": ["run", "/absolute/path/to/server.py"],
+      "env": {
+        "API_KEY": "sk-..."
+      }
+    }
+  }
+}</code></pre>
+        </div>
+        <div id="tab-vscode" class="code-tabs__panel">
+          <pre class="line-numbers"><code class="language-json">{
+  "mcp": {
+    "servers": {
+      "my-server": {
+        "type": "stdio",
+        "command": "uv",
+        "args": ["run", "/absolute/path/to/server.py"],
+        "env": {
+          "API_KEY": "sk-..."
+        }
+      }
+    }
+  }
+}</code></pre>
+        </div>
+      </div>
+
+      <div class="deep-dive">
+        <div class="deep-dive__title">Deep Dive: 설정 필드 상세</div>
+        <table>
+          <thead>
+            <tr><th>필드</th><th>필수</th><th>설명</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>command</code></td><td>O</td><td>실행할 명령어. <code>"uv"</code>, <code>"python"</code>, <code>"node"</code> 등</td></tr>
+            <tr><td><code>args</code></td><td>O</td><td>명령어에 전달할 인자 배열. <strong>절대 경로</strong>를 사용하는 것이 안전하다</td></tr>
+            <tr><td><code>env</code></td><td></td><td>서버 프로세스에 전달할 환경 변수 맵. API 키, DB 연결 문자열 등을 전달한다</td></tr>
+            <tr><td><code>cwd</code></td><td></td><td>서버 프로세스의 작업 디렉토리 (일부 클라이언트 지원)</td></tr>
+          </tbody>
+        </table>
+        <p>
+          <code>env</code> 필드를 사용하면 시스템 환경 변수를 건드리지 않고 서버에 시크릿을 전달할 수 있다.
+          이 값은 서버 프로세스가 시작될 때 환경 변수로 주입되므로, 서버 코드에서 <code>os.environ["API_KEY"]</code>로 접근할 수 있다.
+        </p>
+      </div>
+
+      <h3>stdio의 특성 요약</h3>
+      <table>
+        <thead>
+          <tr><th>항목</th><th>설명</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>통신 방식</td><td>프로세스의 stdin/stdout 파이프, 줄 단위 JSON-RPC</td></tr>
+          <tr><td>사용 시나리오</td><td>로컬 통합, Claude Desktop, IDE 플러그인</td></tr>
+          <tr><td>네트워크</td><td>불필요 (로컬 프로세스 간 통신)</td></tr>
+          <tr><td>다중 클라이언트</td><td>불가 (1:1 연결, 클라이언트당 별도 프로세스)</td></tr>
+          <tr><td>디버깅</td><td>stderr로 로그 출력, <code>MCP Inspector</code> 활용</td></tr>
+          <tr><td>보안</td><td>프로세스 격리로 별도 인증 불필요</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- 7.4 Streamable HTTP Transport — 심화 -->
+    <!-- ============================================================ -->
+    <section>
+      <h2 id="streamable-http">7.4 Streamable HTTP Transport &mdash; 심화</h2>
+
+      <div class="concept-box">
+        <div class="concept-box__title">핵심 개념: Streamable HTTP Transport</div>
+        <p>
+          Streamable HTTP Transport는 <strong>HTTP POST</strong>로 요청을 보내고,
+          서버가 <strong>SSE(Server-Sent Events)</strong> 또는 일반 <strong>JSON 응답</strong>으로 결과를 반환하는 방식이다.
+          표준 HTTP 인프라(로드 밸런서, 리버스 프록시, CDN)를 그대로 활용할 수 있어 원격 배포에 적합하다.
+        </p>
+      </div>
+
+      <h3>내부 작동 원리</h3>
+      <p>Streamable HTTP는 다음과 같은 흐름으로 동작한다.</p>
+
+      <ol class="step-list">
+        <li class="step-list__item">
+          <span class="step-list__number">1</span>
+          <div class="step-list__content">
+            <strong>초기화 요청</strong>
+            클라이언트가 <code>POST /mcp</code>로 <code>initialize</code> 메시지를 보낸다.
+            서버는 <code>Mcp-Session-Id</code> 헤더와 함께 capabilities를 응답한다.
+          </div>
+        </li>
+        <li class="step-list__item">
+          <span class="step-list__number">2</span>
+          <div class="step-list__content">
+            <strong>세션 유지</strong>
+            이후 모든 요청에 <code>Mcp-Session-Id</code> 헤더를 포함하여 세션을 식별한다.
+          </div>
+        </li>
+        <li class="step-list__item">
+          <span class="step-list__number">3</span>
+          <div class="step-list__content">
+            <strong>요청/응답</strong>
+            클라이언트가 <code>POST /mcp</code>로 JSON-RPC 메시지를 보내면, 서버는 SSE 스트림 또는 단일 JSON으로 응답한다.
+            SSE를 사용하면 중간 진행 상황이나 다수의 결과를 스트리밍으로 전달할 수 있다.
+          </div>
+        </li>
+        <li class="step-list__item">
+          <span class="step-list__number">4</span>
+          <div class="step-list__content">
+            <strong>서버 알림 수신 (선택)</strong>
+            클라이언트가 <code>GET /mcp</code>로 SSE 스트림을 열어두면, 서버가 비동기적으로 Notification을 푸시할 수 있다.
+          </div>
+        </li>
+      </ol>
+
+      <div class="mermaid-wrapper">
+<pre class="mermaid">
+sequenceDiagram
+    participant C as Client
+    participant S as Server (HTTP)
+
+    C->>S: POST /mcp {initialize}
+    S-->>C: 200 OK + Mcp-Session-Id: abc123
+    Note over C: 이후 모든 요청에 세션 ID 포함
+
+    C->>S: POST /mcp {tools/list}<br/>Mcp-Session-Id: abc123
+    S-->>C: 200 OK (JSON 또는 SSE)
+
+    C->>S: POST /mcp {tools/call}<br/>Mcp-Session-Id: abc123
+    S-->>C: SSE stream (진행 상황 + 최종 결과)
+
+    opt 서버 알림 수신
+        C->>S: GET /mcp (SSE 스트림 열기)
+        S-->>C: event: message (Notification)
+    end
+</pre>
+      </div>
+
+      <div class="deep-dive">
+        <div class="deep-dive__title">Deep Dive: SSE(Server-Sent Events)와의 관계</div>
+        <p>
+          SSE는 HTTP 응답을 끊지 않고 서버가 클라이언트에 이벤트를 지속적으로 보내는 웹 표준이다.
+          Streamable HTTP Transport는 <code>Content-Type: text/event-stream</code>으로 응답하여,
+          하나의 HTTP 요청 안에서 여러 JSON-RPC 메시지를 순차적으로 전송할 수 있다.
+          이를 통해 도구 실행 중간에 로그 메시지를 보내거나, 긴 작업의 진행 상황을 실시간으로 알릴 수 있다.
+        </p>
+        <p>
+          SSE 스트림 내의 각 이벤트는 다음 형식을 따른다:
+        </p>
+        <pre class="line-numbers"><code class="language-bash">event: message
+data: {"jsonrpc":"2.0","id":3,"result":{"content":[{"type":"text","text":"8"}]}}
+
+event: message
+data: {"jsonrpc":"2.0","method":"notifications/message","params":{"level":"info","data":"처리 완료"}}</code></pre>
+      </div>
+
+      <h3>기본 서버 코드</h3>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python">from mcp.server.fastmcp import FastMCP
+
+mcp = FastMCP("my-server")
+
+@mcp.tool()
+def hello(name: str) -> str:
+    """인사 메시지를 반환한다"""
+    return f"안녕, {name}!"
+
+@mcp.tool()
+def add(a: float, b: float) -> str:
+    """두 수를 더한다"""
+    return str(a + b)
+
+# Streamable HTTP로 실행
+mcp.run(transport="streamable-http")</code></pre>
+      </div>
+
+      <p>위 코드를 실행하면 <code>http://0.0.0.0:8000/mcp</code>에 MCP 엔드포인트가 열린다.</p>
+
+      <h3>설정 옵션 상세</h3>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python"># 모든 옵션을 명시적으로 지정
+mcp.run(
+    transport="streamable-http",
+    host="0.0.0.0",          # 바인딩할 호스트 (기본: "0.0.0.0")
+    port=8000,               # 바인딩할 포트 (기본: 8000)
+    path="/mcp",             # MCP 엔드포인트 경로 (기본: "/mcp")
+    log_level="info",        # 로깅 레벨 (기본: "info")
+    stateless_http=False,    # Stateless 모드 (기본: False)
+)</code></pre>
+      </div>
+
+      <table>
+        <thead>
+          <tr><th>옵션</th><th>기본값</th><th>설명</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>host</code></td><td><code>"0.0.0.0"</code></td><td>서버가 바인딩할 네트워크 인터페이스. <code>"127.0.0.1"</code>로 하면 로컬만 접근 가능</td></tr>
+          <tr><td><code>port</code></td><td><code>8000</code></td><td>리스닝 포트 번호</td></tr>
+          <tr><td><code>path</code></td><td><code>"/mcp"</code></td><td>MCP 엔드포인트 경로. 변경하면 클라이언트 URL도 맞춰야 한다</td></tr>
+          <tr><td><code>log_level</code></td><td><code>"info"</code></td><td>Uvicorn 로깅 레벨 (<code>"debug"</code>, <code>"info"</code>, <code>"warning"</code>, <code>"error"</code>)</td></tr>
+          <tr><td><code>stateless_http</code></td><td><code>False</code></td><td><code>True</code>로 설정하면 세션 없이 동작 (7.5절 참고)</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Mcp-Session-Id와 세션 관리</h3>
+      <p>
+        Streamable HTTP는 기본적으로 <strong>Stateful</strong>하다.
+        서버는 <code>initialize</code> 응답에 <code>Mcp-Session-Id</code> 헤더를 포함하고,
+        클라이언트는 이후 모든 요청에 이 헤더를 포함해야 한다.
+        세션이 유효하지 않으면 서버는 <code>404 Not Found</code>를 반환한다.
+      </p>
+      <div class="protocol-msg protocol-msg--response">
+        <div class="protocol-msg__header">
+          <span class="protocol-msg__arrow">&larr;</span> Response Headers &mdash; initialize 응답
+        </div>
+        <pre class="line-numbers"><code class="language-bash">HTTP/1.1 200 OK
+Content-Type: text/event-stream
+Mcp-Session-Id: a1b2c3d4-e5f6-7890-abcd-ef1234567890</code></pre>
       </div>
     </section>
 
-    <!-- 5. Stateless HTTP 모드 -->
+    <!-- ============================================================ -->
+    <!-- 7.5 Stateless HTTP 모드 -->
+    <!-- ============================================================ -->
     <section>
       <h2 id="stateless">7.5 Stateless HTTP 모드</h2>
-      <p>
-        Streamable HTTP Transport는 기본적으로 <strong>세션 상태를 유지</strong>한다. 클라이언트와 서버 간의 연결이 유지되는 동안 세션 정보가 보존된다.
-        그러나 특정 상황에서는 <strong>상태 비유지(Stateless) 모드</strong>가 필요하다.
-      </p>
 
-      <h3>Stateless 모드란?</h3>
-      <p>
-        Stateless 모드에서는 각 HTTP 요청이 독립적으로 처리된다. 서버가 클라이언트의 세션 상태를 유지하지 않으므로, 수평 확장(scale-out)이 용이하다.
-      </p>
+      <div class="concept-box">
+        <div class="concept-box__title">핵심 개념: Stateless 모드</div>
+        <p>
+          Stateless 모드에서는 서버가 세션을 유지하지 않는다.
+          <code>Mcp-Session-Id</code> 헤더를 발급하지 않으며, 모든 요청은 독립적으로 처리된다.
+          이 모드는 수평 확장(scale-out)과 서버리스 환경에 최적화되어 있다.
+        </p>
+      </div>
 
       <div class="code-block">
         <button class="code-block__copy">복사</button>
@@ -353,10 +598,15 @@ graph TD
 mcp = FastMCP("stateless-server")
 
 @mcp.tool()
+def translate(text: str, target_lang: str) -> str:
+    """텍스트를 번역한다 (상태 비유지)"""
+    # 각 요청이 독립적이므로 세션 컨텍스트에 의존하지 않는다
+    return f"[{target_lang}] {text} (번역됨)"
+
+@mcp.tool()
 def calculate(expression: str) -> str:
-    """수식을 계산한다 (상태 비유지)"""
+    """수식을 계산한다"""
     try:
-        # 주의: 실제 프로덕션에서는 eval을 사용하지 않는다
         result = eval(expression, {"__builtins__": {}})
         return f"{expression} = {result}"
     except Exception as e:
@@ -371,41 +621,337 @@ mcp.run(
 )</code></pre>
       </div>
 
-      <h3>Stateless 모드의 사용 시나리오</h3>
-      <ul>
-        <li><strong>로드 밸런서 뒤에서 실행</strong> — 여러 서버 인스턴스 중 어느 것이 요청을 처리해도 동일한 결과를 보장한다</li>
-        <li><strong>서버리스 환경</strong> — AWS Lambda, Google Cloud Functions 등 상태를 유지할 수 없는 환경</li>
-        <li><strong>단순 도구 서버</strong> — 이전 요청 컨텍스트가 불필요한 독립적인 도구만 제공하는 서버</li>
-      </ul>
+      <h3>Stateful vs Stateless 비교</h3>
+      <table>
+        <thead>
+          <tr><th>기능</th><th>Stateful (기본)</th><th>Stateless</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>세션 ID</td><td>발급됨</td><td>없음</td></tr>
+          <tr><td>서버 측 상태 유지</td><td>가능</td><td>불가</td></tr>
+          <tr><td>도구 호출</td><td>가능</td><td>가능</td></tr>
+          <tr><td>리소스 읽기</td><td>가능</td><td>가능</td></tr>
+          <tr><td>프롬프트</td><td>가능</td><td>가능</td></tr>
+          <tr><td>리소스 구독 (subscribe)</td><td>가능</td><td>불가</td></tr>
+          <tr><td>서버 → 클라이언트 알림</td><td>가능</td><td>제한적</td></tr>
+          <tr><td>Sampling (서버 → LLM 호출)</td><td>가능</td><td>불가</td></tr>
+          <tr><td>수평 확장</td><td>세션 고정 필요</td><td>자유롭게 확장</td></tr>
+        </tbody>
+      </table>
+
+      <h3>서버리스 환경 적합성</h3>
+      <p>
+        Stateless 모드는 AWS Lambda, Google Cloud Run, Vercel Functions 등 요청이 올 때마다 인스턴스가 생성되는 서버리스 환경에 적합하다.
+        각 요청이 완전히 독립적이므로, 어떤 인스턴스가 요청을 처리해도 동일한 결과를 보장한다.
+      </p>
 
       <div class="mermaid-wrapper">
 <pre class="mermaid">
 graph LR
-    subgraph Stateful ["Stateful (기본)"]
-        R1["요청 1"] --> SC["세션 생성"] --> SS["상태 저장"]
-        R2["요청 2"] --> SL1["세션 조회"] --> SU1["상태 활용"]
-        R3["요청 3"] --> SL2["세션 조회"] --> SU2["상태 활용"]
-        SA_INST["같은 서버 인스턴스"]
-    end
+    LB["Load Balancer"]
+    LB --> A["서버 인스턴스 A"]
+    LB --> B["서버 인스턴스 B"]
+    LB --> C["서버 인스턴스 C"]
 
-    subgraph Stateless ["Stateless"]
-        R4["요청 1"] --> P1["처리"] --> RS1["응답 (서버 A)"]
-        R5["요청 2"] --> P2["처리"] --> RS2["응답 (서버 B)"]
-        R6["요청 3"] --> P3["처리"] --> RS3["응답 (서버 C)"]
-    end
+    R1["요청 1"] --> LB
+    R2["요청 2"] --> LB
+    R3["요청 3"] --> LB
+
+    style A fill:#e8f5e9
+    style B fill:#e8f5e9
+    style C fill:#e8f5e9
 </pre>
       </div>
 
-      <div class="info-box info-box--info">
-        <div class="info-box__title">INFO</div>
-        <p>Stateless 모드에서는 세션 기반의 기능(예: 서버 측 상태 관리, 구독 등)이 제한된다. 서버의 도구가 모두 독립적으로 동작 가능한 경우에만 사용한다.</p>
+      <div class="info-box info-box--tip">
+        <div class="info-box__title">TIP</div>
+        <p>
+          서버의 모든 도구가 외부 API 호출이나 단순 계산처럼 상태에 의존하지 않는다면 Stateless 모드가 운영 부담을 크게 줄여준다.
+          반대로 대화 이력이나 리소스 구독이 필요하다면 반드시 Stateful 모드를 사용한다.
+        </p>
       </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- 7.6 Transport 선택 가이드 -->
+    <!-- ============================================================ -->
+    <section>
+      <h2 id="comparison">7.6 Transport 선택 가이드</h2>
+      <p>어떤 Transport를 선택할지는 배포 환경과 요구사항에 따라 결정한다.</p>
+
+      <div class="comparison-grid">
+        <div class="comparison-panel comparison-panel--a">
+          <div class="comparison-panel__header">stdio</div>
+          <div class="comparison-panel__body">
+            <ul>
+              <li><strong>로컬 전용</strong> (같은 머신)</li>
+              <li>네트워크 설정 불필요</li>
+              <li>1:1 연결 (클라이언트 1개)</li>
+              <li>프로세스 격리로 보안 단순</li>
+              <li>Claude Desktop, Cursor, VS Code</li>
+              <li>설정 복잡도: <strong>매우 낮음</strong></li>
+            </ul>
+          </div>
+        </div>
+        <div class="comparison-panel comparison-panel--b">
+          <div class="comparison-panel__header">Streamable HTTP</div>
+          <div class="comparison-panel__body">
+            <ul>
+              <li><strong>원격 접근 가능</strong> (다른 머신)</li>
+              <li>표준 HTTP 인프라 활용</li>
+              <li>다중 클라이언트 동시 접속</li>
+              <li>HTTPS + 인증 구성 필요</li>
+              <li>웹 앱, API 서버, 클라우드</li>
+              <li>설정 복잡도: <strong>중간</strong></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="mermaid-wrapper">
+<pre class="mermaid">
+graph TD
+    Q{"서버를 어디서 실행하는가?"}
+    Q -->|"로컬 (같은 머신)"| L{"클라이언트가 1개인가?"}
+    Q -->|"원격 (다른 머신 / 클라우드)"| R{"수평 확장이 필요한가?"}
+
+    L -->|"예"| STDIO["stdio 선택"]
+    L -->|"아니오 (다중 클라이언트)"| HTTP1["Streamable HTTP 선택"]
+
+    R -->|"예 (서버리스)"| STATELESS["Streamable HTTP\n+ Stateless 모드"]
+    R -->|"아니오"| HTTP2["Streamable HTTP\n+ Stateful 모드"]
+
+    STDIO --> U1["Claude Desktop\nCursor, VS Code"]
+    HTTP1 --> U2["로컬 웹 앱"]
+    STATELESS --> U3["AWS Lambda\nCloud Run"]
+    HTTP2 --> U4["Docker 배포\n전용 서버"]
+</pre>
+      </div>
+
+      <div class="info-box info-box--tip">
+        <div class="info-box__title">TIP</div>
+        <p>
+          개발 중에는 stdio를 사용하고, 프로덕션 배포 시에는 Streamable HTTP로 전환하는 전략이 일반적이다.
+          MCP 서버 코드를 수정할 필요 없이 <code>mcp.run()</code>의 <code>transport</code> 파라미터만 바꾸면 된다.
+        </p>
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- 7.7 프로덕션 배포 -->
+    <!-- ============================================================ -->
+    <section>
+      <h2 id="production">7.7 프로덕션 배포</h2>
+      <p>
+        Streamable HTTP Transport를 프로덕션 환경에 배포할 때는 HTTPS, 리버스 프록시, 컨테이너화 등 추가 인프라 구성이 필요하다.
+        이 절에서는 실무에서 자주 사용되는 배포 패턴을 다룬다.
+      </p>
+
+      <h3>배포 아키텍처</h3>
+      <div class="mermaid-wrapper">
+<pre class="mermaid">
+graph LR
+    Client["MCP 클라이언트\n(HTTPS)"]
+    Nginx["Nginx\n(리버스 프록시\n+ TLS 종단)"]
+    MCP["MCP 서버\n(Docker 컨테이너\nHTTP :8000)"]
+
+    Client -->|"HTTPS :443"| Nginx -->|"HTTP :8000"| MCP
+</pre>
+      </div>
+
+      <p>
+        이 패턴에서 TLS(HTTPS) 종단은 Nginx가 담당하고, MCP 서버는 평문 HTTP로만 동작한다.
+        이렇게 하면 인증서 관리를 Nginx에 집중할 수 있고, MCP 서버 코드는 전혀 변경할 필요가 없다.
+      </p>
+
+      <h3>Docker 배포</h3>
+      <div class="code-tabs">
+        <div class="code-tabs__nav">
+          <button class="code-tabs__tab code-tabs__tab--active" onclick="switchTab(event, 'tab-dockerfile')">Dockerfile</button>
+          <button class="code-tabs__tab" onclick="switchTab(event, 'tab-compose')">docker-compose.yml</button>
+        </div>
+        <div id="tab-dockerfile" class="code-tabs__panel code-tabs__panel--active">
+          <pre class="line-numbers"><code class="language-bash">FROM python:3.12-slim
+
+WORKDIR /app
+
+# 의존성 설치
+COPY pyproject.toml uv.lock ./
+RUN pip install uv && uv sync --frozen
+
+# 서버 코드 복사
+COPY server.py .
+
+# MCP 서버 실행
+EXPOSE 8000
+CMD ["uv", "run", "server.py"]</code></pre>
+        </div>
+        <div id="tab-compose" class="code-tabs__panel">
+          <pre class="line-numbers"><code class="language-bash">services:
+  mcp-server:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - API_KEY=${API_KEY}
+      - DATABASE_URL=${DATABASE_URL}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/mcp"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf
+      - ./certs:/etc/nginx/certs
+    depends_on:
+      - mcp-server</code></pre>
+        </div>
+      </div>
+
+      <h3>Nginx 리버스 프록시 설정</h3>
+      <p>SSE 스트리밍을 지원하려면 Nginx에서 버퍼링을 비활성화해야 한다.</p>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-bash">server {
+    listen 443 ssl;
+    server_name mcp.example.com;
+
+    ssl_certificate     /etc/nginx/certs/cert.pem;
+    ssl_certificate_key /etc/nginx/certs/key.pem;
+
+    location /mcp {
+        proxy_pass http://mcp-server:8000;
+
+        # SSE 스트리밍 지원을 위해 버퍼링 비활성화
+        proxy_buffering off;
+        proxy_cache off;
+
+        # SSE 연결을 위한 타임아웃 설정
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+
+        # 필요한 헤더 전달
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # SSE를 위한 Connection 헤더
+        proxy_set_header Connection '';
+        proxy_http_version 1.1;
+        chunked_transfer_encoding off;
+    }
+}</code></pre>
+      </div>
+
+      <div class="info-box info-box--warning">
+        <div class="info-box__title">WARNING</div>
+        <p>
+          <code>proxy_buffering off</code>는 SSE 스트리밍에 필수적이다. 이 설정이 없으면 Nginx가 서버 응답을 버퍼에 모아둔 후 한꺼번에 전송하므로, 클라이언트가 실시간 이벤트를 받지 못한다.
+        </p>
+      </div>
+
+      <h3>인증 미들웨어</h3>
+      <p>
+        프로덕션 환경에서는 MCP 서버에 인증을 추가해야 한다.
+        MCP Python SDK는 OAuth 2.1 기반 인증을 내장 지원하며, 자세한 내용은 <a href="11-auth.html">Chapter 11. OAuth 인증</a>에서 다룬다.
+        여기서는 간단한 Bearer 토큰 검증 패턴만 소개한다.
+      </p>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python">from starlette.applications import Starlette
+from starlette.middleware import Middleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import JSONResponse
+import os
+
+class AuthMiddleware(BaseHTTPMiddleware):
+    """간단한 Bearer 토큰 인증 미들웨어"""
+    async def dispatch(self, request: Request, call_next):
+        # health check 등은 인증 제외
+        if request.url.path == "/health":
+            return await call_next(request)
+
+        auth_header = request.headers.get("Authorization", "")
+        expected_token = os.environ.get("MCP_AUTH_TOKEN", "")
+
+        if not auth_header.startswith("Bearer ") or \
+           auth_header[7:] != expected_token:
+            return JSONResponse(
+                {"error": "Unauthorized"},
+                status_code=401,
+            )
+
+        return await call_next(request)
+
+# ASGI 통합 시 미들웨어 적용 (Ch13 참고)
+# app = Starlette(middleware=[Middleware(AuthMiddleware)])</code></pre>
+      </div>
+
+      <div class="deep-dive">
+        <div class="deep-dive__title">Deep Dive: CORS 설정</div>
+        <p>
+          웹 브라우저에서 MCP 서버에 직접 접근하는 경우(예: 웹 기반 MCP 클라이언트), CORS 설정이 필요하다.
+          MCP Python SDK의 Streamable HTTP 서버는 Starlette/ASGI 기반이므로, <code>CORSMiddleware</code>를 추가하면 된다.
+        </p>
+        <pre class="line-numbers"><code class="language-python">from starlette.middleware.cors import CORSMiddleware
+
+# ASGI 앱에 CORS 미들웨어 추가
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://your-frontend.com"],
+    allow_methods=["GET", "POST", "DELETE"],
+    allow_headers=["Content-Type", "Mcp-Session-Id", "Authorization"],
+    expose_headers=["Mcp-Session-Id"],
+)</code></pre>
+        <p>
+          <code>expose_headers</code>에 <code>"Mcp-Session-Id"</code>를 반드시 포함해야 브라우저가 이 헤더를 읽을 수 있다.
+        </p>
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- 7.8 다음 단계 -->
+    <!-- ============================================================ -->
+    <section>
+      <h2 id="next">7.8 다음 단계</h2>
+      <p>이 장에서는 Transport 계층의 내부 구조와 JSON-RPC 메시지 흐름, 그리고 프로덕션 배포 전략을 학습했다. 핵심 정리는 다음과 같다.</p>
+
+      <ul>
+        <li><strong>JSON-RPC 2.0</strong> &mdash; Request(id 포함), Response(result/error), Notification(id 없음)의 3가지 메시지 유형</li>
+        <li><strong>stdio</strong> &mdash; 로컬 프로세스 간 통신, stdout 오염 금지, Claude Desktop/IDE에 최적</li>
+        <li><strong>Streamable HTTP</strong> &mdash; HTTP POST + SSE, 세션 관리(<code>Mcp-Session-Id</code>), 원격 배포 가능</li>
+        <li><strong>Stateless 모드</strong> &mdash; 세션 없이 동작, 수평 확장과 서버리스 환경에 적합</li>
+        <li><strong>프로덕션 배포</strong> &mdash; Docker + Nginx 리버스 프록시, TLS 종단, 인증 미들웨어</li>
+      </ul>
+
+      <p>
+        다음 장에서는 Python으로 <strong>MCP 클라이언트</strong>를 직접 구현한다.
+        서버에 연결하여 도구를 호출하고, LLM과 결합하여 에이전트 루프를 구축하며,
+        Sampling 기능으로 서버가 LLM을 역으로 호출하는 패턴까지 다룬다.
+      </p>
     </section>
 
     <nav class="page-nav"></nav>
   </main>
 </div>
 
+<script>
+function switchTab(event, tabId) {
+  const tabContainer = event.target.closest('.code-tabs');
+  tabContainer.querySelectorAll('.code-tabs__tab').forEach(t => t.classList.remove('code-tabs__tab--active'));
+  tabContainer.querySelectorAll('.code-tabs__panel').forEach(p => p.classList.remove('code-tabs__panel--active'));
+  event.target.classList.add('code-tabs__tab--active');
+  tabContainer.querySelector('#' + tabId).classList.add('code-tabs__panel--active');
+}
+</script>
 <script src="../js/nav.js?v=2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>

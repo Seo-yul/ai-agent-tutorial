@@ -9,64 +9,104 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.css">
 </head>
 <body>
-
 <header class="site-header">
-  <button class="hamburger" aria-label="메뉴">
-    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-  </button>
+  <button class="hamburger" aria-label="메뉴"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
   <a href="../index.html" class="site-header__title"><span>MCP</span> Python SDK 튜토리얼</a>
   <span class="site-header__badge">v1.12.x</span>
 </header>
-
 <div class="layout">
   <nav class="sidebar"></nav>
   <main class="main">
     <span class="chapter-badge chapter-badge--basic">기본 과정</span>
-    <h1>Chapter 6. Prompts 심화</h1>
-    <p class="chapter-subtitle">재사용 가능한 프롬프트 템플릿을 정의하고 활용한다</p>
+    <h1>Prompts 심화</h1>
+    <p class="chapter-subtitle">프롬프트 템플릿, 다중 메시지, 임베디드 리소스, 그리고 멀티모달 콘텐츠</p>
 
+    <!-- ────────────────────────────────────────────── -->
     <!-- 1. Prompts 개요 -->
+    <!-- ────────────────────────────────────────────── -->
     <section>
-      <h2 id="overview">6.1 Prompts 개요</h2>
-      <p>
-        MCP의 <strong>Prompts</strong>는 미리 정의된 프롬프트 템플릿이다. 사용자나 LLM이 일관된 방식으로 특정 작업을 요청할 수 있도록, 서버 측에서 프롬프트의 구조와 내용을 미리 작성해 둔다.
-      </p>
-      <p>
-        Prompts를 사용하면 다음과 같은 이점이 있다.
-      </p>
-      <ul>
-        <li><strong>일관성</strong> — 매번 같은 형식의 프롬프트를 사용하여 결과의 품질을 유지한다</li>
-        <li><strong>재사용성</strong> — 한 번 정의하면 여러 클라이언트에서 동일하게 사용할 수 있다</li>
-        <li><strong>파라미터화</strong> — 입력값을 받아 동적으로 프롬프트를 생성한다</li>
-        <li><strong>발견 가능성</strong> — 클라이언트가 사용 가능한 프롬프트 목록을 자동으로 조회할 수 있다</li>
-      </ul>
+      <h2 id="overview">Prompts 개요</h2>
+
+      <div class="concept-box">
+        <div class="concept-box__title">핵심 개념: Prompt란 무엇인가</div>
+        <p>
+          MCP에서 <strong>Prompt</strong>는 서버가 미리 정의해 둔 <strong>프롬프트 템플릿</strong>이다.
+          클라이언트(앱)는 사용 가능한 프롬프트 목록을 조회하고, 파라미터를 전달하여 완성된 메시지를 받는다.
+          이 메시지를 LLM에게 전달하면, 일관된 형식으로 작업을 요청할 수 있다.
+          코드 리뷰, 버그 분석, 문서 생성 등 반복적인 작업 패턴을 표준화하는 데 유용하다.
+        </p>
+      </div>
+
+      <h3>프로토콜 수준 흐름</h3>
 
       <div class="mermaid-wrapper">
 <pre class="mermaid">
 sequenceDiagram
-    participant C as 클라이언트
-    participant S as MCP 서버
+    participant U as 사용자
+    participant C as MCP Client
+    participant S as MCP Server
     participant L as LLM
 
-    C->>S: 1. 프롬프트 목록 요청 (list_prompts)
-    S-->>C: 프롬프트 목록 반환
-    Note over C: 2. 사용자가 프롬프트 선택 + 파라미터 입력
-    C->>S: get_prompt("code_review", {"code": "...", "lang": "py"})
-    S-->>C: 3. 완성된 프롬프트 메시지 반환 [UserMessage, ...]
-    C->>L: 4. 해당 메시지를 LLM에 전달
-    L-->>C: LLM 처리 결과
+    C->>S: prompts/list
+    S-->>C: Prompt[] (name, description, arguments)
+    Note over U,C: 사용자가 프롬프트 선택 + 인자 입력
+    C->>S: prompts/get {name, arguments}
+    S-->>C: GetPromptResult {messages[]}
+    C->>L: messages를 LLM에 전달
+    L-->>C: LLM 응답
 </pre>
+      </div>
+
+      <div class="protocol-msg protocol-msg--response">
+        <div class="protocol-msg__header"><span class="protocol-msg__arrow">&larr;</span> prompts/list 응답 예시</div>
+        <pre class="language-json"><code class="language-json">{
+  "prompts": [
+    {
+      "name": "code_review",
+      "description": "코드 리뷰 프롬프트",
+      "arguments": [
+        {
+          "name": "code",
+          "description": "리뷰할 코드",
+          "required": true
+        },
+        {
+          "name": "language",
+          "description": "프로그래밍 언어",
+          "required": false
+        }
+      ]
+    }
+  ]
+}</code></pre>
+      </div>
+
+      <div class="protocol-msg protocol-msg--response">
+        <div class="protocol-msg__header"><span class="protocol-msg__arrow">&larr;</span> prompts/get 응답 예시</div>
+        <pre class="language-json"><code class="language-json">{
+  "messages": [
+    {
+      "role": "user",
+      "content": {
+        "type": "text",
+        "text": "다음 Python 코드를 리뷰해주세요..."
+      }
+    }
+  ]
+}</code></pre>
       </div>
     </section>
 
+    <!-- ────────────────────────────────────────────── -->
     <!-- 2. 기본 프롬프트 -->
+    <!-- ────────────────────────────────────────────── -->
     <section>
-      <h2 id="basic-prompts">6.2 기본 프롬프트</h2>
+      <h2 id="basic">기본 프롬프트</h2>
       <p>
-        가장 간단한 프롬프트는 <strong>문자열을 반환하는 함수</strong>로 정의한다. <code>@mcp.prompt()</code> 데코레이터를 사용하며, 함수의 파라미터가 프롬프트의 인자가 된다.
+        가장 간단한 프롬프트는 <strong>문자열을 반환하는 함수</strong>이다.
+        <code>@mcp.prompt()</code> 데코레이터를 사용하며, 반환된 문자열은 자동으로 <code>UserMessage</code>로 감싸진다.
       </p>
 
-      <h3>텍스트 요약 프롬프트</h3>
       <div class="code-block">
         <button class="code-block__copy">복사</button>
         <pre class="line-numbers"><code class="language-python">from mcp.server.fastmcp import FastMCP
@@ -76,41 +116,47 @@ mcp = FastMCP("prompt-server")
 @mcp.prompt()
 def summarize(text: str, language: str = "ko") -> str:
     """텍스트 요약 프롬프트"""
-    return f"다음 텍스트를 {language} 언어로 요약해주세요:\n\n{text}"</code></pre>
-      </div>
+    return f"다음 텍스트를 {language} 언어로 3줄 이내로 요약하라:\n\n{text}"
 
-      <p>
-        <code>summarize</code>라는 이름의 프롬프트가 등록된다. 필수 파라미터 <code>text</code>와 선택 파라미터 <code>language</code>(기본값: <code>"ko"</code>)를 받는다.
-      </p>
 
-      <h3>번역 프롬프트</h3>
-      <div class="code-block">
-        <button class="code-block__copy">복사</button>
-        <pre class="line-numbers"><code class="language-python">@mcp.prompt()
-def translate(text: str, source_lang: str = "ko", target_lang: str = "en") -> str:
+@mcp.prompt()
+def translate(text: str, source: str = "ko", target: str = "en") -> str:
     """텍스트 번역 프롬프트"""
     return (
-        f"다음 {source_lang} 텍스트를 {target_lang}로 번역해주세요.\n"
-        f"원문의 뉘앙스와 문맥을 최대한 살려서 자연스럽게 번역해주세요.\n\n"
+        f"다음 {source} 텍스트를 {target}로 번역하라.\n"
+        f"원문의 뉘앙스를 최대한 살려 자연스럽게 번역하라.\n\n"
         f"원문:\n{text}"
     )</code></pre>
       </div>
 
-      <div class="info-box info-box--tip">
-        <div class="info-box__title">TIP</div>
-        <p>프롬프트 함수의 docstring은 클라이언트에서 프롬프트 설명으로 표시된다. 프롬프트의 용도를 명확히 작성하면 사용자가 올바른 프롬프트를 선택하는 데 도움이 된다.</p>
+      <p>
+        함수의 파라미터가 프롬프트의 인자(argument)가 된다.
+        기본값이 있는 파라미터는 선택적 인자이고, 없는 파라미터는 필수 인자이다.
+        함수의 docstring은 프롬프트 설명으로 사용된다.
+      </p>
+
+      <div class="pipeline">
+        <div class="pipeline__stage"><div class="pipeline__stage-label">함수 정의<br><code>def summarize(text, language)</code></div></div>
+        <div class="pipeline__arrow">&rarr;</div>
+        <div class="pipeline__stage"><div class="pipeline__stage-label">인자 추출<br><code>text: 필수</code><br><code>language: 선택</code></div></div>
+        <div class="pipeline__arrow">&rarr;</div>
+        <div class="pipeline__stage"><div class="pipeline__stage-label">문자열 반환</div></div>
+        <div class="pipeline__arrow">&rarr;</div>
+        <div class="pipeline__stage"><div class="pipeline__stage-label">UserMessage로 변환</div></div>
       </div>
     </section>
 
+    <!-- ────────────────────────────────────────────── -->
     <!-- 3. 다중 메시지 프롬프트 -->
+    <!-- ────────────────────────────────────────────── -->
     <section>
-      <h2 id="multi-message">6.3 다중 메시지 프롬프트</h2>
+      <h2 id="multi-message">다중 메시지 프롬프트</h2>
       <p>
-        더 복잡한 프롬프트는 <strong>여러 메시지로 구성된 대화</strong> 형태로 정의할 수 있다.
-        <code>mcp.server.fastmcp.prompts.base</code> 모듈의 <code>Message</code> 클래스를 사용한다.
+        복잡한 프롬프트는 <strong>여러 메시지로 구성된 대화</strong> 형태로 정의할 수 있다.
+        <code>UserMessage</code>와 <code>AssistantMessage</code>를 조합하여 few-shot 패턴을 구현하거나,
+        시스템 지시와 사용자 입력을 논리적으로 분리할 수 있다.
       </p>
 
-      <h3>코드 리뷰 프롬프트</h3>
       <div class="code-block">
         <button class="code-block__copy">복사</button>
         <pre class="line-numbers"><code class="language-python">from mcp.server.fastmcp.prompts import base
@@ -120,173 +166,680 @@ def code_review(code: str, language: str = "python") -> list[base.Message]:
     """코드 리뷰 프롬프트"""
     return [
         base.UserMessage(
-            f"다음 {language} 코드를 리뷰해주세요. "
-            f"보안 취약점, 성능 문제, 코드 스타일을 확인해주세요."
+            f"당신은 시니어 {language} 개발자이다. "
+            f"다음 코드를 보안, 성능, 가독성 관점에서 리뷰하라.\n"
+            f"결과는 심각도별로 분류하라."
         ),
-        base.UserMessage(code),
+        base.UserMessage(f"```{language}\n{code}\n```"),
     ]</code></pre>
       </div>
 
+      <h3>few-shot 패턴</h3>
       <p>
-        다중 메시지 프롬프트는 <code>base.Message</code> 객체의 리스트를 반환한다.
-        사용 가능한 메시지 타입은 다음과 같다.
+        <code>UserMessage</code>와 <code>AssistantMessage</code>를 교차 배치하면,
+        LLM에게 원하는 응답 형식을 예시로 보여줄 수 있다.
       </p>
-      <ul>
-        <li><code>base.UserMessage(content)</code> — 사용자 역할의 메시지</li>
-        <li><code>base.AssistantMessage(content)</code> — 어시스턴트 역할의 메시지</li>
-      </ul>
 
-      <h3>디버깅 분석 프롬프트</h3>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python">@mcp.prompt()
+def extract_entities(text: str) -> list[base.Message]:
+    """텍스트에서 엔티티를 추출하는 프롬프트 (few-shot)"""
+    return [
+        # 지시 메시지
+        base.UserMessage(
+            "텍스트에서 인물, 장소, 날짜 엔티티를 추출하여 JSON으로 반환하라."
+        ),
+        # 예시 1: 사용자 입력
+        base.UserMessage("김철수는 2024년 3월 서울에서 열린 컨퍼런스에 참석했다."),
+        # 예시 1: 기대하는 응답
+        base.AssistantMessage(
+            '{"persons": ["김철수"], "locations": ["서울"], '
+            '"dates": ["2024년 3월"]}'
+        ),
+        # 예시 2: 사용자 입력
+        base.UserMessage(
+            "이영희와 박지민은 부산 해운대에서 5월 1일에 만났다."
+        ),
+        # 예시 2: 기대하는 응답
+        base.AssistantMessage(
+            '{"persons": ["이영희", "박지민"], '
+            '"locations": ["부산", "해운대"], '
+            '"dates": ["5월 1일"]}'
+        ),
+        # 실제 입력
+        base.UserMessage(text),
+    ]</code></pre>
+      </div>
+
+      <div class="info-box info-box--tip">
+        <div class="info-box__title">TIP</div>
+        <p>
+          few-shot 패턴은 LLM에게 응답 형식과 품질의 기준을 명시적으로 보여준다.
+          JSON 형식, 분류 체계, 코드 스타일 등 일관된 출력이 필요한 경우에 효과적이다.
+        </p>
+      </div>
+    </section>
+
+    <!-- ────────────────────────────────────────────── -->
+    <!-- 4. 파라미터화된 프롬프트 -->
+    <!-- ────────────────────────────────────────────── -->
+    <section>
+      <h2 id="parameterized">파라미터화된 프롬프트</h2>
+      <p>
+        선택적 파라미터를 활용하면 하나의 프롬프트로 다양한 변형을 만들 수 있다.
+        조건부 메시지를 포함시켜 파라미터 유무에 따라 프롬프트 구조를 동적으로 변경한다.
+      </p>
+
       <div class="code-block">
         <button class="code-block__copy">복사</button>
         <pre class="line-numbers"><code class="language-python">@mcp.prompt()
 def debug_analysis(
     error_message: str,
-    code: str,
+    code: str = "",
     stack_trace: str = "",
+    environment: str = "",
 ) -> list[base.Message]:
-    """버그 분석 프롬프트"""
+    """버그 분석 프롬프트 (조건부 메시지 포함)"""
     messages = [
         base.UserMessage(
-            "당신은 숙련된 Python 디버깅 전문가이다. "
-            "다음 오류를 분석하고 해결책을 제시해주세요."
+            "당신은 디버깅 전문가이다. 다음 오류를 체계적으로 분석하라."
         ),
         base.UserMessage(f"## 에러 메시지\n```\n{error_message}\n```"),
-        base.UserMessage(f"## 관련 코드\n```python\n{code}\n```"),
     ]
 
+    # 선택적 파라미터: 코드가 제공된 경우에만 포함
+    if code:
+        messages.append(
+            base.UserMessage(f"## 관련 코드\n```python\n{code}\n```")
+        )
+
+    # 선택적 파라미터: 스택 트레이스가 있으면 포함
     if stack_trace:
         messages.append(
             base.UserMessage(f"## 스택 트레이스\n```\n{stack_trace}\n```")
         )
 
+    # 선택적 파라미터: 실행 환경 정보
+    if environment:
+        messages.append(
+            base.UserMessage(f"## 실행 환경\n{environment}")
+        )
+
+    # 분석 요청 (항상 포함)
     messages.append(
         base.UserMessage(
-            "위 정보를 바탕으로 다음을 분석해주세요:\n"
-            "1. 오류의 근본 원인\n"
-            "2. 구체적인 수정 방법\n"
-            "3. 재발 방지를 위한 권장 사항"
+            "다음 항목을 포함하여 분석하라:\n"
+            "1. 근본 원인\n"
+            "2. 영향 범위\n"
+            "3. 수정 코드\n"
+            "4. 테스트 케이스\n"
+            "5. 재발 방지 조치"
         )
     )
 
     return messages</code></pre>
       </div>
+    </section>
+
+    <!-- ────────────────────────────────────────────── -->
+    <!-- 5. EmbeddedResource -->
+    <!-- ────────────────────────────────────────────── -->
+    <section>
+      <h2 id="embedded-resource">EmbeddedResource</h2>
+
+      <div class="deep-dive">
+        <div class="deep-dive__title">Deep Dive: 프롬프트에 리소스를 임베드하기</div>
+        <p>
+          <code>EmbeddedResource</code>는 프롬프트 메시지 안에 MCP 리소스의 URI를 포함시키는 기능이다.
+          프롬프트가 실행될 때 해당 URI의 리소스 데이터가 자동으로 로드되어 메시지에 포함된다.
+          이를 통해 프롬프트와 리소스를 느슨하게 결합하면서, LLM에게 풍부한 문맥을 제공할 수 있다.
+        </p>
+      </div>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python">from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp.prompts import base
+from mcp.types import EmbeddedResource, TextResourceContents
+
+mcp = FastMCP("embedded-resource-demo")
+
+# 리소스 정의
+@mcp.resource("docs://api-guide")
+def get_api_guide() -> str:
+    """API 가이드 문서"""
+    return """# API 가이드
+## 인증
+모든 요청에 Bearer 토큰을 포함해야 한다.
+
+## 엔드포인트
+- GET /users - 사용자 목록
+- POST /users - 사용자 생성
+- GET /users/{id} - 사용자 조회
+"""
+
+@mcp.resource("docs://style-guide")
+def get_style_guide() -> str:
+    """코드 스타일 가이드"""
+    return """# 코드 스타일 가이드
+- 함수명: snake_case
+- 클래스명: PascalCase
+- 상수: UPPER_SNAKE_CASE
+- 줄 길이: 최대 100자
+"""
+
+
+# EmbeddedResource를 사용하는 프롬프트
+@mcp.prompt()
+def review_with_guidelines(code: str) -> list[base.Message]:
+    """코드 스타일 가이드를 참조하여 코드를 리뷰하는 프롬프트"""
+    return [
+        base.UserMessage(
+            "다음 코드 스타일 가이드를 참고하여 코드를 리뷰하라."
+        ),
+        # EmbeddedResource: 리소스 URI를 메시지에 임베드한다
+        base.UserMessage(
+            EmbeddedResource(
+                type="resource",
+                resource=TextResourceContents(
+                    uri="docs://style-guide",
+                    text=get_style_guide(),  # 리소스 데이터를 직접 포함
+                    mimeType="text/plain",
+                ),
+            )
+        ),
+        base.UserMessage(f"## 리뷰 대상 코드\n```python\n{code}\n```"),
+        base.UserMessage(
+            "스타일 가이드 위반 사항과 개선점을 항목별로 정리하라."
+        ),
+    ]</code></pre>
+      </div>
 
       <div class="info-box info-box--info">
         <div class="info-box__title">INFO</div>
-        <p>다중 메시지 프롬프트는 LLM에게 <strong>대화 컨텍스트</strong>를 제공하는 데 유용하다. 시스템 지시, 사용자 입력, 분석 요청 등을 논리적으로 분리할 수 있다.</p>
+        <p>
+          <code>EmbeddedResource</code>를 사용하면 리소스의 데이터가 프롬프트 메시지의 일부로 전달된다.
+          클라이언트가 별도로 <code>resources/read</code>를 호출할 필요 없이, 프롬프트 응답 안에 데이터가 포함되므로
+          LLM이 즉시 참조할 수 있다.
+        </p>
       </div>
     </section>
 
-    <!-- 4. 스타일별 프롬프트 -->
+    <!-- ────────────────────────────────────────────── -->
+    <!-- 6. 이미지를 포함한 프롬프트 -->
+    <!-- ────────────────────────────────────────────── -->
     <section>
-      <h2 id="style-prompts">6.4 스타일별 프롬프트</h2>
-      <p>
-        같은 작업에 대해 다양한 스타일 옵션을 제공하면, 사용자가 상황에 맞는 출력을 선택할 수 있다.
-      </p>
+      <h2 id="multimodal">이미지를 포함한 프롬프트</h2>
 
-      <h3>문서 생성 프롬프트</h3>
-      <div class="code-block">
-        <button class="code-block__copy">복사</button>
-        <pre class="line-numbers"><code class="language-python">@mcp.prompt()
-def generate_docs(
-    code: str,
-    style: str = "detailed",
-    language: str = "python",
-) -> str:
-    """코드 문서화 프롬프트 (스타일 선택 가능)"""
-
-    style_instructions = {
-        "detailed": (
-            "각 함수/클래스에 대해 상세한 문서를 작성해주세요. "
-            "파라미터 설명, 반환값, 사용 예제를 모두 포함한다."
-        ),
-        "concise": (
-            "각 함수/클래스에 대해 한 줄 요약만 작성해주세요. "
-            "핵심 기능만 간결하게 설명한다."
-        ),
-        "tutorial": (
-            "초보자를 위한 튜토리얼 형식으로 문서를 작성해주세요. "
-            "단계별로 설명하고 실행 가능한 예제를 포함한다."
-        ),
-    }
-
-    instruction = style_instructions.get(style, style_instructions["detailed"])
-
-    return (
-        f"다음 {language} 코드에 대한 문서를 작성해주세요.\n\n"
-        f"스타일: {style}\n"
-        f"지침: {instruction}\n\n"
-        f"```{language}\n{code}\n```"
-    )</code></pre>
+      <div class="deep-dive">
+        <div class="deep-dive__title">Deep Dive: 멀티모달 프롬프트</div>
+        <p>
+          MCP 프롬프트는 텍스트뿐만 아니라 <strong>이미지</strong>도 포함할 수 있다.
+          <code>ImageContent</code>를 사용하여 base64 인코딩된 이미지를 메시지에 포함시키면,
+          멀티모달 LLM(Claude, GPT-4V 등)이 이미지를 분석하는 프롬프트를 만들 수 있다.
+        </p>
       </div>
 
-      <h3>커밋 메시지 생성 프롬프트</h3>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python">import base64
+from pathlib import Path
+from mcp.server.fastmcp.prompts import base
+from mcp.types import ImageContent, TextContent
+
+@mcp.prompt()
+def analyze_screenshot(
+    image_path: str,
+    analysis_type: str = "ui",
+) -> list[base.Message]:
+    """스크린샷을 분석하는 멀티모달 프롬프트
+
+    Args:
+        image_path: 분석할 이미지 파일 경로
+        analysis_type: 분석 유형 (ui, accessibility, performance)
+    """
+    # 이미지 파일 읽기 및 base64 인코딩
+    img_path = Path(image_path)
+    if not img_path.exists():
+        return [base.UserMessage(f"이미지를 찾을 수 없다: {image_path}")]
+
+    img_data = base64.b64encode(img_path.read_bytes()).decode("utf-8")
+
+    # 확장자에서 MIME 타입 추론
+    mime_map = {".png": "image/png", ".jpg": "image/jpeg", ".gif": "image/gif"}
+    mime_type = mime_map.get(img_path.suffix.lower(), "image/png")
+
+    # 분석 유형별 지시
+    instructions = {
+        "ui": "UI/UX 관점에서 레이아웃, 색상, 타이포그래피, 사용성을 분석하라.",
+        "accessibility": "접근성(a11y) 관점에서 대비, 글꼴 크기, 네비게이션을 분석하라.",
+        "performance": "성능 관점에서 이미지 최적화, 렌더링 블로킹 요소를 분석하라.",
+    }
+
+    instruction = instructions.get(analysis_type, instructions["ui"])
+
+    return [
+        base.UserMessage(f"다음 스크린샷을 분석하라. 분석 관점: {instruction}"),
+        # ImageContent를 직접 UserMessage에 포함한다
+        base.UserMessage(
+            ImageContent(
+                type="image",
+                data=img_data,
+                mimeType=mime_type,
+            )
+        ),
+        base.UserMessage(
+            "분석 결과를 다음 형식으로 정리하라:\n"
+            "1. 긍정적 요소\n"
+            "2. 개선 필요 사항\n"
+            "3. 구체적인 개선 제안"
+        ),
+    ]</code></pre>
+      </div>
+
+      <div class="info-box info-box--info">
+        <div class="info-box__title">INFO</div>
+        <p>
+          이미지 콘텐츠는 base64 인코딩된 문자열로 전송된다.
+          큰 이미지는 전송 크기가 커지므로, 필요한 경우 리사이즈하여 사용하는 것이 좋다.
+          멀티모달을 지원하지 않는 LLM에서는 이미지 콘텐츠를 무시하거나 에러를 반환할 수 있다.
+        </p>
+      </div>
+    </section>
+
+    <!-- ────────────────────────────────────────────── -->
+    <!-- 7. 프롬프트 인자 스키마 -->
+    <!-- ────────────────────────────────────────────── -->
+    <section>
+      <h2 id="argument-schema">프롬프트 인자 스키마</h2>
+
+      <div class="deep-dive">
+        <div class="deep-dive__title">Deep Dive: PromptArgument 커스터마이징</div>
+        <p>
+          FastMCP는 함수의 파라미터를 분석하여 <code>PromptArgument</code>를 자동 생성한다.
+          하지만 <code>@mcp.prompt()</code> 데코레이터에서 인자 스키마를 수동으로 지정하면
+          <code>required</code>와 <code>description</code>을 더 세밀하게 제어할 수 있다.
+        </p>
+      </div>
+
+      <p>
+        기본적으로 FastMCP는 다음 규칙으로 인자를 생성한다.
+      </p>
+
+      <table>
+        <thead>
+          <tr><th>함수 파라미터</th><th>결과</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>code: str</code> (기본값 없음)</td><td><code>required: true</code></td></tr>
+          <tr><td><code>language: str = "python"</code></td><td><code>required: false</code></td></tr>
+          <tr><td>docstring의 Args 항목</td><td><code>description</code>에 반영</td></tr>
+        </tbody>
+      </table>
+
       <div class="code-block">
         <button class="code-block__copy">복사</button>
         <pre class="line-numbers"><code class="language-python">@mcp.prompt()
-def commit_message(
-    diff: str,
-    convention: str = "conventional",
+def generate_tests(
+    code: str,
+    framework: str = "pytest",
+    coverage: str = "comprehensive",
 ) -> list[base.Message]:
-    """Git 커밋 메시지 생성 프롬프트"""
+    """테스트 코드 생성 프롬프트
 
-    conventions = {
-        "conventional": (
-            "Conventional Commits 형식을 사용한다.\n"
-            "형식: <type>(<scope>): <description>\n"
-            "타입: feat, fix, docs, style, refactor, test, chore"
-        ),
-        "gitmoji": (
-            "Gitmoji 형식을 사용한다.\n"
-            "형식: <emoji> <description>\n"
-            "예: ✨ 새로운 기능 추가"
-        ),
-        "simple": (
-            "간결하고 명확한 한 줄 메시지를 작성한다.\n"
-            "현재 시제를 사용하며 50자 이내로 작성한다."
-        ),
+    Args:
+        code: 테스트를 작성할 대상 코드
+        framework: 테스트 프레임워크 (pytest 또는 unittest)
+        coverage: 테스트 범위 (basic, comprehensive, edge_cases)
+    """
+    coverage_map = {
+        "basic": "핵심 기능의 기본 동작만 테스트하라.",
+        "comprehensive": "정상, 에러, 경계값을 모두 테스트하라.",
+        "edge_cases": "엣지 케이스와 예외 상황에 집중하라.",
     }
-
-    convention_guide = conventions.get(convention, conventions["conventional"])
 
     return [
         base.UserMessage(
-            f"다음 git diff를 분석하여 커밋 메시지를 작성해주세요.\n\n"
-            f"컨벤션:\n{convention_guide}"
+            f"다음 코드에 대한 테스트를 {framework}로 작성하라.\n\n"
+            f"테스트 범위: {coverage_map.get(coverage, coverage_map['comprehensive'])}\n\n"
+            f"```python\n{code}\n```"
         ),
-        base.UserMessage(f"```diff\n{diff}\n```"),
     ]</code></pre>
+      </div>
+
+      <p>위 프롬프트는 다음과 같은 인자 스키마를 생성한다.</p>
+
+      <div class="protocol-msg protocol-msg--response">
+        <div class="protocol-msg__header"><span class="protocol-msg__arrow">&larr;</span> prompts/list에서 generate_tests의 arguments</div>
+        <pre class="language-json"><code class="language-json">{
+  "arguments": [
+    {
+      "name": "code",
+      "description": "테스트를 작성할 대상 코드",
+      "required": true
+    },
+    {
+      "name": "framework",
+      "description": "테스트 프레임워크 (pytest 또는 unittest)",
+      "required": false
+    },
+    {
+      "name": "coverage",
+      "description": "테스트 범위 (basic, comprehensive, edge_cases)",
+      "required": false
+    }
+  ]
+}</code></pre>
+      </div>
+
+      <div class="info-box info-box--tip">
+        <div class="info-box__title">TIP</div>
+        <p>
+          docstring의 <code>Args</code> 섹션에 각 파라미터의 설명을 작성하면, 프롬프트 인자의 <code>description</code>에 자동 반영된다.
+          사용자(또는 클라이언트 UI)가 각 인자의 용도를 쉽게 파악할 수 있도록 구체적으로 작성하라.
+        </p>
       </div>
     </section>
 
-    <!-- 5. 실전 예제 -->
+    <!-- ────────────────────────────────────────────── -->
+    <!-- 8. 프롬프트 + 도구 연계 -->
+    <!-- ────────────────────────────────────────────── -->
     <section>
-      <h2 id="practical-example">6.5 실전 예제: 개발 도우미 프롬프트 서버</h2>
+      <h2 id="tool-integration">프롬프트 + 도구 연계</h2>
+
+      <div class="deep-dive">
+        <div class="deep-dive__title">Deep Dive: 프롬프트에서 도구 사용을 유도하는 패턴</div>
+        <p>
+          프롬프트 메시지 안에 "이 서버의 도구를 사용하라"는 지시를 포함시키면,
+          LLM이 프롬프트를 받은 뒤 자연스럽게 서버의 도구를 호출하는 워크플로를 만들 수 있다.
+          이를 통해 "데이터 조회 -> 분석 -> 액션" 패턴을 하나의 프롬프트로 시작할 수 있다.
+        </p>
+      </div>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python">from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp.prompts import base
+
+mcp = FastMCP("workflow-demo")
+
+
+# 도구 정의
+@mcp.tool()
+def search_codebase(query: str, file_pattern: str = "*.py") -> list[dict]:
+    """코드베이스에서 패턴을 검색한다
+
+    Args:
+        query: 검색 키워드
+        file_pattern: 파일 패턴
+    """
+    # 검색 구현
+    return [{"file": "app.py", "line": 42, "content": f"match: {query}"}]
+
+
+@mcp.tool()
+def run_tests(test_path: str = "tests/") -> str:
+    """테스트를 실행한다
+
+    Args:
+        test_path: 테스트 디렉토리
+    """
+    return "All tests passed (15/15)"
+
+
+@mcp.tool()
+def create_issue(title: str, body: str, labels: list[str] = []) -> dict:
+    """이슈를 생성한다
+
+    Args:
+        title: 이슈 제목
+        body: 이슈 본문
+        labels: 레이블 목록
+    """
+    return {"id": 42, "url": "https://github.com/org/repo/issues/42"}
+
+
+# 프롬프트: 도구 사용을 유도한다
+@mcp.prompt()
+def investigate_bug(description: str) -> list[base.Message]:
+    """버그를 조사하고 이슈를 생성하는 워크플로 프롬프트
+
+    이 프롬프트는 LLM에게 다음 단계를 수행하도록 유도한다:
+    1. search_codebase로 관련 코드 검색
+    2. run_tests로 테스트 실행
+    3. 분석 후 create_issue로 이슈 생성
+    """
+    return [
+        base.UserMessage(
+            "다음 버그 보고를 조사하라. 이 서버에서 제공하는 도구를 활용하라.\n\n"
+            "수행할 작업:\n"
+            "1. `search_codebase` 도구로 관련 코드를 검색하라.\n"
+            "2. `run_tests` 도구로 현재 테스트 상태를 확인하라.\n"
+            "3. 분석 결과를 정리하라.\n"
+            "4. `create_issue` 도구로 버그 이슈를 생성하라.\n\n"
+            f"## 버그 설명\n{description}"
+        ),
+    ]
+
+
+@mcp.prompt()
+def refactor_guide(file_path: str) -> list[base.Message]:
+    """파일 리팩토링 가이드 프롬프트 (도구 연계)"""
+    return [
+        base.UserMessage(
+            f"'{file_path}' 파일을 리팩토링하려고 한다.\n\n"
+            "다음 단계로 진행하라:\n"
+            "1. `search_codebase` 도구로 해당 파일을 참조하는 코드를 찾아라.\n"
+            "2. 의존 관계를 분석하라.\n"
+            "3. 안전한 리팩토링 계획을 제시하라.\n"
+            "4. `run_tests` 도구로 현재 테스트가 모두 통과하는지 확인하라.\n"
+            "5. 리팩토링 후 실행해야 할 테스트를 명시하라."
+        ),
+    ]</code></pre>
+      </div>
+
+      <div class="mermaid-wrapper">
+<pre class="mermaid">
+graph LR
+    A["프롬프트 실행<br>investigate_bug"] --> B["LLM이 메시지 수신"]
+    B --> C["search_codebase 호출"]
+    C --> D["run_tests 호출"]
+    D --> E["분석 결과 정리"]
+    E --> F["create_issue 호출"]
+    F --> G["사용자에게 결과 보고"]
+</pre>
+      </div>
+
+      <div class="info-box info-box--info">
+        <div class="info-box__title">INFO</div>
+        <p>
+          프롬프트와 도구 연계는 <strong>명시적 강제가 아니라 지시(instruction)</strong>이다.
+          LLM이 프롬프트의 지시를 따를지는 LLM의 판단에 달려 있다.
+          도구 이름과 파라미터를 명확히 명시하면 LLM이 도구를 올바르게 호출할 확률이 높아진다.
+        </p>
+      </div>
+    </section>
+
+    <!-- ────────────────────────────────────────────── -->
+    <!-- 9. 프롬프트 목록 변경 알림 -->
+    <!-- ────────────────────────────────────────────── -->
+    <section>
+      <h2 id="list-changed">프롬프트 목록 변경 알림</h2>
+
+      <div class="deep-dive">
+        <div class="deep-dive__title">Deep Dive: 동적 프롬프트 등록과 알림</div>
+        <p>
+          서버가 런타임에 프롬프트를 추가하거나 제거하면,
+          <code>notifications/prompts/list_changed</code> 알림을 보내야 한다.
+          클라이언트는 이 알림을 받으면 <code>prompts/list</code>를 다시 호출하여 최신 프롬프트 목록을 갱신한다.
+        </p>
+      </div>
+
+      <div class="protocol-msg protocol-msg--notification">
+        <div class="protocol-msg__header"><span class="protocol-msg__arrow">&rarr;</span> notifications/prompts/list_changed</div>
+        <pre class="language-json"><code class="language-json">{
+  "method": "notifications/prompts/list_changed"
+}</code></pre>
+      </div>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-python">from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp.prompts import base
+
+mcp = FastMCP("dynamic-prompts")
+
+# 프롬프트 레지스트리
+_prompt_templates: dict[str, dict] = {}
+
+
+@mcp.tool()
+async def register_prompt_template(
+    name: str,
+    template: str,
+    description: str = "",
+) -> str:
+    """새 프롬프트 템플릿을 동적으로 등록한다
+
+    Args:
+        name: 프롬프트 이름
+        template: 프롬프트 템플릿 문자열 ({input} 자리표시자 사용)
+        description: 프롬프트 설명
+    """
+    _prompt_templates[name] = {
+        "template": template,
+        "description": description,
+    }
+
+    # 동적으로 프롬프트 등록
+    @mcp.prompt(name=name, description=description)
+    def _dynamic_prompt(input: str) -> str:
+        return template.replace("{input}", input)
+
+    # 프롬프트 목록 변경 알림
+    await mcp.notify_prompts_list_changed()
+
+    return f"프롬프트 등록 완료: {name}"
+
+
+@mcp.tool()
+async def remove_prompt_template(name: str) -> str:
+    """프롬프트 템플릿을 제거한다
+
+    Args:
+        name: 제거할 프롬프트 이름
+    """
+    if name not in _prompt_templates:
+        raise ValueError(f"등록되지 않은 프롬프트이다: {name}")
+
+    del _prompt_templates[name]
+
+    # 프롬프트 목록 변경 알림
+    await mcp.notify_prompts_list_changed()
+
+    return f"프롬프트 제거 완료: {name}"</code></pre>
+      </div>
+
+      <div class="comparison-grid">
+        <div class="comparison-panel comparison-panel--a">
+          <div class="comparison-panel__header">resources/list_changed</div>
+          <div class="comparison-panel__body">
+            <p>리소스 목록이 변경될 때</p>
+            <pre class="language-python"><code class="language-python">await mcp.notify_resource_list_changed()</code></pre>
+          </div>
+        </div>
+        <div class="comparison-panel comparison-panel--b">
+          <div class="comparison-panel__header">prompts/list_changed</div>
+          <div class="comparison-panel__body">
+            <p>프롬프트 목록이 변경될 때</p>
+            <pre class="language-python"><code class="language-python">await mcp.notify_prompts_list_changed()</code></pre>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ────────────────────────────────────────────── -->
+    <!-- 10. 실전 예제 -->
+    <!-- ────────────────────────────────────────────── -->
+    <section>
+      <h2 id="practical">실전 예제: 개발 도우미 프롬프트 서버</h2>
       <p>
-        코드 리뷰, 버그 분석, 문서 생성 프롬프트를 모두 제공하는 개발 도우미 MCP 서버를 완성해 보자.
+        코드 리뷰, 버그 분석, 문서 생성, 테스트 생성 프롬프트를 종합적으로 제공하는 개발 도우미 서버를 구축한다.
+        EmbeddedResource, 도구 연계, 다중 메시지 패턴을 모두 활용한다.
       </p>
 
       <div class="code-block">
         <button class="code-block__copy">복사</button>
-        <pre class="line-numbers"><code class="language-python">import json
+        <pre class="line-numbers"><code class="language-python">"""개발 도우미 프롬프트 MCP 서버
+
+코드 리뷰, 버그 분석, 문서 생성, 테스트 생성 프롬프트를 제공한다.
+도구 연계와 EmbeddedResource 패턴을 활용한다.
+"""
+import json
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.prompts import base
+from mcp.types import EmbeddedResource, TextResourceContents
 
-mcp = FastMCP("dev-assistant-prompts")
+mcp = FastMCP("Dev Assistant")
 
 
-# ── 코드 리뷰 프롬프트 ──────────────────────────────────
+# ── 리소스: 코딩 규칙 ──────────────────────────────
+@mcp.resource("guide://coding-standards", mime_type="text/plain")
+def get_coding_standards() -> str:
+    """프로젝트 코딩 표준"""
+    return """# 코딩 표준
+- 함수 최대 줄 수: 30줄
+- 파라미터 최대 개수: 5개
+- 반드시 타입 힌트를 사용한다
+- 모든 공개 함수에 docstring을 작성한다
+- 매직 넘버 사용 금지 (상수로 정의)
+"""
 
+
+@mcp.resource("guide://commit-convention", mime_type="text/plain")
+def get_commit_convention() -> str:
+    """커밋 메시지 규칙"""
+    return """# 커밋 메시지 컨벤션
+형식: <type>(<scope>): <description>
+타입: feat, fix, docs, style, refactor, test, chore
+scope: 선택 사항 (모듈 또는 파일명)
+description: 현재 시제, 50자 이내
+"""
+
+
+# ── 도구: 코드 분석 ────────────────────────────────
+@mcp.tool()
+def analyze_complexity(code: str) -> dict:
+    """코드의 복잡도를 분석한다
+
+    Args:
+        code: 분석할 Python 코드
+    """
+    lines = code.strip().split("\n")
+    functions = sum(1 for l in lines if l.strip().startswith("def "))
+    classes = sum(1 for l in lines if l.strip().startswith("class "))
+    return {
+        "total_lines": len(lines),
+        "functions": functions,
+        "classes": classes,
+        "avg_lines_per_function": len(lines) // max(functions, 1),
+    }
+
+
+# ── 프롬프트 1: 코드 리뷰 ─────────────────────────
 @mcp.prompt()
 def review_code(
     code: str,
     language: str = "python",
     focus: str = "all",
 ) -> list[base.Message]:
-    """코드 리뷰 프롬프트
+    """코드 리뷰 프롬프트 (코딩 표준 참조 + 도구 연계)
 
-    focus 옵션: all, security, performance, style
+    Args:
+        code: 리뷰할 코드
+        language: 프로그래밍 언어
+        focus: 리뷰 초점 (all, security, performance, style)
     """
     focus_map = {
         "all": "보안, 성능, 코드 스타일, 가독성을 종합적으로",
@@ -294,34 +847,51 @@ def review_code(
         "performance": "성능 병목, 메모리 누수, 알고리즘 효율성을 중심으로",
         "style": "코드 컨벤션, 네이밍, 구조 설계를 중심으로",
     }
-    focus_desc = focus_map.get(focus, focus_map["all"])
 
     return [
         base.UserMessage(
             f"당신은 시니어 {language} 개발자이다. "
-            f"다음 코드를 {focus_desc} 리뷰해주세요.\n\n"
-            f"리뷰 결과를 다음 형식으로 정리해주세요:\n"
-            f"- 🔴 심각: 즉시 수정 필요\n"
-            f"- 🟡 주의: 개선 권장\n"
-            f"- 🟢 제안: 더 나은 방법 제안"
+            f"다음 코드를 {focus_map.get(focus, focus_map['all'])} 리뷰하라."
+        ),
+        # 코딩 표준을 EmbeddedResource로 참조
+        base.UserMessage(
+            EmbeddedResource(
+                type="resource",
+                resource=TextResourceContents(
+                    uri="guide://coding-standards",
+                    text=get_coding_standards(),
+                    mimeType="text/plain",
+                ),
+            )
         ),
         base.UserMessage(f"```{language}\n{code}\n```"),
+        base.UserMessage(
+            "리뷰 결과를 다음 형식으로 정리하라:\n"
+            "- [심각] 즉시 수정 필요\n"
+            "- [주의] 개선 권장\n"
+            "- [제안] 더 나은 방법\n\n"
+            "코드 복잡도를 확인하려면 `analyze_complexity` 도구를 사용하라."
+        ),
     ]
 
 
-# ── 버그 분석 프롬프트 ──────────────────────────────────
-
+# ── 프롬프트 2: 버그 분석 ─────────────────────────
 @mcp.prompt()
 def analyze_bug(
     description: str,
     code: str = "",
     error_log: str = "",
-    environment: str = "",
 ) -> list[base.Message]:
-    """버그 분석 프롬프트"""
+    """버그 분석 프롬프트 (도구 연계)
+
+    Args:
+        description: 버그 설명
+        code: 관련 코드 (선택)
+        error_log: 에러 로그 (선택)
+    """
     messages = [
         base.UserMessage(
-            "당신은 디버깅 전문가이다. 다음 버그를 체계적으로 분석해주세요."
+            "당신은 디버깅 전문가이다. 다음 버그를 체계적으로 분석하라."
         ),
         base.UserMessage(f"## 버그 설명\n{description}"),
     ]
@@ -336,27 +906,50 @@ def analyze_bug(
             base.UserMessage(f"## 에러 로그\n```\n{error_log}\n```")
         )
 
-    if environment:
-        messages.append(
-            base.UserMessage(f"## 실행 환경\n{environment}")
-        )
-
     messages.append(
         base.UserMessage(
-            "다음 항목을 포함하여 분석해주세요:\n"
-            "1. **원인 분석**: 버그의 근본 원인\n"
-            "2. **영향 범위**: 이 버그가 영향을 미치는 범위\n"
-            "3. **해결 방법**: 구체적인 수정 코드\n"
-            "4. **테스트**: 수정 후 확인해야 할 테스트 케이스\n"
-            "5. **예방 조치**: 유사한 버그를 방지하기 위한 조치"
+            "다음 항목을 포함하여 분석하라:\n"
+            "1. 근본 원인\n"
+            "2. 영향 범위\n"
+            "3. 수정 코드\n"
+            "4. 테스트 케이스\n"
+            "5. 재발 방지 조치"
         )
     )
 
     return messages
 
 
-# ── 문서 생성 프롬프트 ──────────────────────────────────
+# ── 프롬프트 3: 커밋 메시지 생성 ──────────────────
+@mcp.prompt()
+def commit_message(
+    diff: str,
+    convention: str = "conventional",
+) -> list[base.Message]:
+    """커밋 메시지 생성 프롬프트 (컨벤션 가이드 참조)
 
+    Args:
+        diff: Git diff 내용
+        convention: 컨벤션 유형 (conventional, simple)
+    """
+    return [
+        base.UserMessage("다음 커밋 컨벤션을 참고하여 커밋 메시지를 작성하라."),
+        base.UserMessage(
+            EmbeddedResource(
+                type="resource",
+                resource=TextResourceContents(
+                    uri="guide://commit-convention",
+                    text=get_commit_convention(),
+                    mimeType="text/plain",
+                ),
+            )
+        ),
+        base.UserMessage(f"```diff\n{diff}\n```"),
+        base.UserMessage("커밋 메시지만 출력하라. 설명은 불필요하다."),
+    ]
+
+
+# ── 프롬프트 4: API 문서 생성 ─────────────────────
 @mcp.prompt()
 def generate_api_docs(
     code: str,
@@ -364,57 +957,21 @@ def generate_api_docs(
 ) -> list[base.Message]:
     """API 문서 생성 프롬프트
 
-    format 옵션: markdown, restructuredtext, docstring
+    Args:
+        code: 문서화할 코드
+        format: 출력 형식 (markdown, docstring)
     """
     format_instructions = {
-        "markdown": "Markdown 형식으로 API 문서를 작성한다.",
-        "restructuredtext": "reStructuredText 형식으로 API 문서를 작성한다.",
-        "docstring": "Google 스타일 docstring을 각 함수/클래스에 추가한다.",
+        "markdown": "Markdown 형식으로 API 문서를 작성하라.",
+        "docstring": "Google 스타일 docstring을 각 함수/클래스에 추가하라.",
     }
-    instruction = format_instructions.get(format, format_instructions["markdown"])
 
     return [
         base.UserMessage(
-            f"다음 코드에 대한 API 문서를 작성해주세요.\n\n"
-            f"출력 형식: {format}\n"
-            f"지침: {instruction}\n\n"
-            f"각 함수/클래스에 대해 다음을 포함해주세요:\n"
-            f"- 설명\n"
-            f"- 파라미터 (타입, 기본값, 설명)\n"
-            f"- 반환값\n"
-            f"- 예외\n"
-            f"- 사용 예제"
-        ),
-        base.UserMessage(f"```python\n{code}\n```"),
-    ]
-
-
-# ── 테스트 생성 프롬프트 ──────────────────────────────────
-
-@mcp.prompt()
-def generate_tests(
-    code: str,
-    framework: str = "pytest",
-    coverage: str = "comprehensive",
-) -> list[base.Message]:
-    """테스트 코드 생성 프롬프트
-
-    framework 옵션: pytest, unittest
-    coverage 옵션: basic, comprehensive, edge_cases
-    """
-    coverage_map = {
-        "basic": "핵심 기능에 대한 기본 테스트만 작성한다.",
-        "comprehensive": "정상 케이스, 에러 케이스, 경계값을 포괄하는 테스트를 작성한다.",
-        "edge_cases": "엣지 케이스와 예외 상황에 집중한 테스트를 작성한다.",
-    }
-    coverage_desc = coverage_map.get(coverage, coverage_map["comprehensive"])
-
-    return [
-        base.UserMessage(
-            f"다음 코드에 대한 테스트를 {framework}로 작성해주세요.\n\n"
-            f"테스트 범위: {coverage}\n"
-            f"지침: {coverage_desc}\n\n"
-            f"각 테스트에는 한글로 된 설명을 docstring에 포함한다."
+            f"다음 코드에 대한 API 문서를 작성하라.\n\n"
+            f"출력 형식: {format_instructions.get(format, format_instructions['markdown'])}\n\n"
+            f"각 함수/클래스에 대해 다음을 포함하라:\n"
+            f"- 설명, 파라미터, 반환값, 예외, 사용 예제"
         ),
         base.UserMessage(f"```python\n{code}\n```"),
     ]
@@ -424,26 +981,46 @@ if __name__ == "__main__":
     mcp.run()</code></pre>
       </div>
 
+      <p>이 서버의 핵심 설계 포인트를 정리한다.</p>
+      <ol class="step-list">
+        <li class="step-list__item"><span class="step-list__number">1</span><div class="step-list__content"><strong>EmbeddedResource 활용</strong> 코딩 표준과 커밋 컨벤션을 리소스로 정의하고, 프롬프트에서 임베드하여 LLM이 규칙을 참조하도록 한다.</div></li>
+        <li class="step-list__item"><span class="step-list__number">2</span><div class="step-list__content"><strong>도구 연계 패턴</strong> 코드 리뷰 프롬프트에서 <code>analyze_complexity</code> 도구 사용을 유도하여, 프롬프트 -> 도구 호출의 자연스러운 워크플로를 구성한다.</div></li>
+        <li class="step-list__item"><span class="step-list__number">3</span><div class="step-list__content"><strong>조건부 메시지</strong> 버그 분석 프롬프트에서 선택적 파라미터(code, error_log)가 제공된 경우에만 해당 메시지를 포함시킨다.</div></li>
+        <li class="step-list__item"><span class="step-list__number">4</span><div class="step-list__content"><strong>다중 메시지 구조</strong> 지시, 참조 자료, 입력, 출력 형식 요청을 별도 메시지로 분리하여 논리적 구조를 명확히 한다.</div></li>
+        <li class="step-list__item"><span class="step-list__number">5</span><div class="step-list__content"><strong>파라미터 설명</strong> docstring의 Args 섹션을 상세히 작성하여, 클라이언트 UI에서 각 인자의 용도와 선택지를 쉽게 파악할 수 있도록 한다.</div></li>
+      </ol>
+
       <h3>서버 실행 및 확인</h3>
       <div class="code-block">
         <button class="code-block__copy">복사</button>
         <pre class="line-numbers"><code class="language-bash"># 서버 실행
 uv run server.py
 
-# 또는 개발 모드로 실행 (MCP Inspector 사용)
-mcp dev server.py</code></pre>
-      </div>
+# 개발 모드 (MCP Inspector)
+mcp dev server.py
 
-      <div class="info-box info-box--tip">
-        <div class="info-box__title">TIP</div>
-        <p><code>mcp dev</code> 명령으로 MCP Inspector를 실행하면, 등록된 프롬프트 목록을 확인하고 파라미터를 입력하여 결과를 미리 볼 수 있다. 프롬프트를 개발할 때 매우 유용하다.</p>
+# Inspector에서 확인할 수 있는 항목:
+# - Prompts 탭: 등록된 프롬프트 목록과 인자 스키마
+# - Resources 탭: 코딩 표준, 커밋 컨벤션 리소스
+# - Tools 탭: analyze_complexity 도구</code></pre>
       </div>
+    </section>
+
+    <!-- ────────────────────────────────────────────── -->
+    <!-- 다음 단계 -->
+    <!-- ────────────────────────────────────────────── -->
+    <section>
+      <h2 id="next">다음 단계</h2>
+      <p>
+        Prompts의 기본 사용법부터 다중 메시지, EmbeddedResource, 멀티모달 콘텐츠,
+        인자 스키마, 도구 연계, 목록 변경 알림까지 심층적으로 살펴보았다.
+        다음 챕터에서는 MCP의 고급 주제인 <strong>Transport</strong>와 <strong>서버 배포</strong>를 다룬다.
+      </p>
     </section>
 
     <nav class="page-nav"></nav>
   </main>
 </div>
-
 <script src="../js/nav.js?v=2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
