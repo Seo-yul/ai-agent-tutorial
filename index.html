@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI Agent 개발 튜토리얼 — MCP &amp; LangGraph</title>
+  <title>AI Agent 개발 튜토리얼 — MCP &amp; LangGraph &amp; RAG</title>
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -21,7 +21,7 @@
   <main class="main">
     <div class="home-hero">
       <h1>AI Agent 개발 튜토리얼</h1>
-      <p>MCP로 도구를 만들고, LangGraph로 에이전트를 구축한다. Python 기반 실전 가이드.</p>
+      <p>MCP로 도구를 만들고, LangGraph로 에이전트를 구축하고, RAG로 지식을 연결한다. Python 기반 실전 가이드.</p>
     </div>
 
     <!-- Course Cards -->
@@ -37,6 +37,12 @@
         <div class="course-card__title">LangGraph</div>
         <div class="course-card__desc">그래프 기반 AI 에이전트 — 상태 머신으로 에이전트의 사고 흐름을 직접 설계한다.</div>
         <div class="course-card__meta">12개 챕터 · 기본 + 심화</div>
+      </a>
+      <a href="rag/01-what-is-rag.html" class="course-card course-card--rag">
+        <div class="course-card__icon">🔍</div>
+        <div class="course-card__title">RAG</div>
+        <div class="course-card__desc">Retrieval-Augmented Generation — 외부 문서를 검색하여 LLM의 답변을 강화한다.</div>
+        <div class="course-card__meta">13개 챕터 · 기본 + 심화</div>
       </a>
     </div>
 
@@ -174,6 +180,75 @@
         <span class="chapter-card__number">12</span>
         <span class="chapter-card__title">MCP 연동</span>
         <span class="chapter-card__desc">— LangGraph + MCP 서버</span>
+      </a>
+      <!-- RAG Chapters -->
+      <h2 style="margin-top:56px">RAG — 기본 과정</h2>
+      <a href="rag/01-what-is-rag.html" class="chapter-card chapter-card--rag">
+        <span class="chapter-card__number">01</span>
+        <span class="chapter-card__title">RAG란 무엇인가</span>
+        <span class="chapter-card__desc">— 개념, 아키텍처, 발전 단계</span>
+      </a>
+      <a href="rag/02-environment-setup.html" class="chapter-card chapter-card--rag">
+        <span class="chapter-card__number">02</span>
+        <span class="chapter-card__title">환경 설정</span>
+        <span class="chapter-card__desc">— LangChain, 벡터 DB, API 키</span>
+      </a>
+      <a href="rag/03-document-loading.html" class="chapter-card chapter-card--rag">
+        <span class="chapter-card__number">03</span>
+        <span class="chapter-card__title">문서 로딩과 전처리</span>
+        <span class="chapter-card__desc">— PDF 파싱, 메타데이터 추출</span>
+      </a>
+      <a href="rag/04-chunking.html" class="chapter-card chapter-card--rag">
+        <span class="chapter-card__number">04</span>
+        <span class="chapter-card__title">청킹 전략</span>
+        <span class="chapter-card__desc">— 분할 방식, 크기 최적화</span>
+      </a>
+      <a href="rag/05-embedding.html" class="chapter-card chapter-card--rag">
+        <span class="chapter-card__number">05</span>
+        <span class="chapter-card__title">임베딩 모델</span>
+        <span class="chapter-card__desc">— 모델 비교, MTEB, 비용</span>
+      </a>
+      <a href="rag/06-vector-store.html" class="chapter-card chapter-card--rag">
+        <span class="chapter-card__number">06</span>
+        <span class="chapter-card__title">벡터 스토어</span>
+        <span class="chapter-card__desc">— pgvector, Qdrant, 인덱싱</span>
+      </a>
+      <a href="rag/07-retrieval-generation.html" class="chapter-card chapter-card--rag">
+        <span class="chapter-card__number">07</span>
+        <span class="chapter-card__title">검색과 생성</span>
+        <span class="chapter-card__desc">— 프롬프트, LLM, RAG 체인</span>
+      </a>
+      <a href="rag/08-first-rag-pipeline.html" class="chapter-card chapter-card--rag">
+        <span class="chapter-card__number">08</span>
+        <span class="chapter-card__title">첫 번째 RAG 파이프라인</span>
+        <span class="chapter-card__desc">— end-to-end 조립, 실행</span>
+      </a>
+
+      <h2 style="margin-top:40px">RAG — 심화 과정</h2>
+      <a href="rag/09-search-optimization.html" class="chapter-card chapter-card--rag">
+        <span class="chapter-card__number">09</span>
+        <span class="chapter-card__title">검색 품질 최적화</span>
+        <span class="chapter-card__desc">— MMR, 하이브리드, Re-ranking</span>
+      </a>
+      <a href="rag/10-advanced-rag-patterns.html" class="chapter-card chapter-card--rag">
+        <span class="chapter-card__number">10</span>
+        <span class="chapter-card__title">고급 RAG 패턴</span>
+        <span class="chapter-card__desc">— Multi-query, HyDE, CRAG</span>
+      </a>
+      <a href="rag/11-rag-evaluation.html" class="chapter-card chapter-card--rag">
+        <span class="chapter-card__number">11</span>
+        <span class="chapter-card__title">RAG 평가</span>
+        <span class="chapter-card__desc">— RAGAS, Faithfulness, 자동화</span>
+      </a>
+      <a href="rag/12-kubernetes-deployment.html" class="chapter-card chapter-card--rag">
+        <span class="chapter-card__number">12</span>
+        <span class="chapter-card__title">Kubernetes 배포</span>
+        <span class="chapter-card__desc">— pgvector/Qdrant K8s, API 서버</span>
+      </a>
+      <a href="rag/13-production-operations.html" class="chapter-card chapter-card--rag">
+        <span class="chapter-card__number">13</span>
+        <span class="chapter-card__title">프로덕션 운영</span>
+        <span class="chapter-card__desc">— 캐싱, 모니터링, 스케일링</span>
       </a>
     </div>
   </main>

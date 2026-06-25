@@ -1,0 +1,962 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kubernetes 배포 - RAG 튜토리얼</title>
+  <link rel="stylesheet" href="../css/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.css">
+</head>
+<body>
+
+<header class="site-header">
+  <button class="hamburger" aria-label="메뉴">
+    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+  </button>
+  <a href="../index.html" class="site-header__title"><span>RAG</span> 튜토리얼</a>
+</header>
+
+<div class="layout">
+  <nav class="sidebar"></nav>
+  <main class="main">
+    <span class="chapter-badge chapter-badge--rag-advanced">심화 과정</span>
+    <h1>Kubernetes 배포</h1>
+    <p class="chapter-subtitle">RAG 시스템을 Kubernetes 클러스터에 프로덕션 수준으로 배포한다</p>
+
+    <!-- 1. 프로덕션 아키텍처 -->
+    <section>
+      <h2>프로덕션 아키텍처</h2>
+      <p>
+        로컬에서 Jupyter Notebook으로 동작하던 RAG 시스템을 실제 사용자에게 서비스하려면
+        안정적이고 확장 가능한 인프라가 필요하다.
+        <strong>Kubernetes(K8s)</strong>는 컨테이너 오케스트레이션의 사실상 표준이며,
+        RAG 시스템의 프로덕션 배포에 가장 적합한 플랫폼이다.
+      </p>
+
+      <div class="mermaid-wrapper">
+<pre class="mermaid">
+graph TB
+    USER["사용자"] --> ING["Ingress<br/>(nginx/traefik)"]
+    ING --> API["API Server<br/>(FastAPI)<br/>Deployment"]
+    API --> VS["벡터 스토어<br/>(pgvector / Qdrant)<br/>StatefulSet"]
+    API --> LLM["LLM API<br/>(OpenAI / Claude)"]
+    CJ["CronJob<br/>(인덱싱 파이프라인)"] --> VS
+    CM["ConfigMap<br/>(설정)"] -.-> API
+    SEC["Secret<br/>(API 키)"] -.-> API
+    SEC -.-> CJ
+    MON["Prometheus<br/>+ Grafana"] -.-> API
+
+    style USER fill:#e8f4f8,stroke:#333
+    style API fill:#d4edda,stroke:#333
+    style VS fill:#fff3cd,stroke:#333
+    style LLM fill:#f8d7da,stroke:#333
+</pre>
+      </div>
+
+      <p>프로덕션 RAG 아키텍처의 핵심 컴포넌트는 다음과 같다:</p>
+      <ul>
+        <li><strong>API Server (FastAPI)</strong>: 사용자 쿼리를 받아 RAG 체인을 실행하고 답변을 반환하는 메인 서비스. Deployment로 배포하여 수평 확장한다.</li>
+        <li><strong>벡터 스토어 (pgvector/Qdrant)</strong>: 임베딩된 문서를 저장하고 검색하는 데이터베이스. StatefulSet으로 배포하여 데이터를 영구 보존한다.</li>
+        <li><strong>인덱싱 파이프라인</strong>: 문서를 로드, 청킹, 임베딩하여 벡터 스토어에 저장하는 배치 작업. Job 또는 CronJob으로 실행한다.</li>
+        <li><strong>Ingress</strong>: 외부 트래픽을 API 서버로 라우팅하고 TLS를 종단한다.</li>
+      </ul>
+
+      <div class="info-box info-box--info">
+        <div class="info-box__title">INFO</div>
+        <p>
+          Kubernetes를 선택하는 이유: ① 트래픽에 따른 자동 스케일링(HPA) ② Pod 실패 시 자가 복구
+          ③ 선언적 매니페스트로 인프라를 코드로 관리(IaC) ④ 클라우드 벤더 독립적 배포.
+        </p>
+      </div>
+    </section>
+
+    <!-- 2. 벡터 스토어 배포 -->
+    <section>
+      <h2>벡터 스토어 배포</h2>
+      <p>
+        RAG 시스템의 핵심 데이터 계층인 벡터 스토어를 Kubernetes에 배포한다.
+        가장 많이 사용되는 두 가지 옵션인 <strong>pgvector</strong>와 <strong>Qdrant</strong>를 모두 다룬다.
+      </p>
+
+      <h3>pgvector on Kubernetes — CloudNativePG Operator</h3>
+      <p>
+        pgvector는 PostgreSQL의 확장이므로, PostgreSQL을 K8s에서 운영하는 것이 핵심이다.
+        <strong>CloudNativePG(CNPG)</strong>는 PostgreSQL을 Kubernetes에서 운영하기 위한 가장 성숙한 Operator로,
+        고가용성, 자동 백업, 페일오버를 네이티브로 지원한다.
+      </p>
+
+      <h4>Operator 설치</h4>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">BASH</span>
+<pre class="line-numbers"><code class="language-bash"># CloudNativePG Operator 설치
+kubectl apply --server-side -f \
+  https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/release-1.24/releases/cnpg-1.24.0.yaml
+
+# 설치 확인
+kubectl get deployment -n cnpg-system cnpg-controller-manager</code></pre>
+      </div>
+
+      <h4>pgvector 클러스터 매니페스트</h4>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">YAML</span>
+<pre class="line-numbers"><code class="language-yaml"># pgvector-cluster.yaml
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: pgvector-cluster
+  namespace: rag
+spec:
+  instances: 2  # Primary 1 + Replica 1
+
+  # pgvector 확장을 포함한 이미지 사용
+  imageName: pgvector/pgvector:pg16
+
+  postgresql:
+    shared_preload_libraries:
+      - vector
+
+  storage:
+    size: 20Gi
+    storageClass: standard  # 환경에 맞게 변경
+
+  resources:
+    requests:
+      memory: "1Gi"
+      cpu: "500m"
+    limits:
+      memory: "2Gi"
+      cpu: "1000m"
+
+  bootstrap:
+    initdb:
+      database: ragdb
+      owner: raguser
+      postInitSQL:
+        - CREATE EXTENSION IF NOT EXISTS vector;
+        - |
+          CREATE TABLE IF NOT EXISTS documents (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            content TEXT NOT NULL,
+            metadata JSONB,
+            embedding vector(1536)
+          );
+        - |
+          CREATE INDEX ON documents
+          USING ivfflat (embedding vector_cosine_ops)
+          WITH (lists = 100);
+
+  backup:
+    barmanObjectStore:
+      destinationPath: "s3://rag-backups/pgvector/"
+      s3Credentials:
+        accessKeyId:
+          name: backup-creds
+          key: ACCESS_KEY_ID
+        secretAccessKey:
+          name: backup-creds
+          key: SECRET_ACCESS_KEY
+    retentionPolicy: "7d"</code></pre>
+      </div>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">BASH</span>
+<pre class="line-numbers"><code class="language-bash"># 네임스페이스 생성 및 클러스터 배포
+kubectl create namespace rag
+kubectl apply -f pgvector-cluster.yaml
+
+# 상태 확인
+kubectl get cluster -n rag
+kubectl get pods -n rag -l cnpg.io/cluster=pgvector-cluster</code></pre>
+      </div>
+
+      <h3>Qdrant on Kubernetes — Helm Chart</h3>
+      <p>
+        Qdrant는 벡터 검색에 특화된 전용 데이터베이스로, 공식 Helm chart를 제공한다.
+        PostgreSQL과 달리 벡터 검색만을 위해 설계되었기 때문에 성능 최적화가 더 세밀하다.
+      </p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">BASH</span>
+<pre class="line-numbers"><code class="language-bash"># Qdrant Helm 저장소 추가
+helm repo add qdrant https://qdrant.github.io/qdrant-helm
+helm repo update
+
+# 설치 (기본 설정)
+helm install qdrant qdrant/qdrant \
+  --namespace rag \
+  --create-namespace \
+  --set replicaCount=2 \
+  --set persistence.size=20Gi \
+  --set resources.requests.memory=1Gi \
+  --set resources.requests.cpu=500m \
+  --set resources.limits.memory=2Gi \
+  --set resources.limits.cpu=1000m</code></pre>
+      </div>
+
+      <h4>values.yaml 커스터마이징</h4>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">YAML</span>
+<pre class="line-numbers"><code class="language-yaml"># qdrant-values.yaml
+replicaCount: 2
+
+persistence:
+  size: 20Gi
+  storageClassName: standard
+
+resources:
+  requests:
+    memory: "1Gi"
+    cpu: "500m"
+  limits:
+    memory: "2Gi"
+    cpu: "1000m"
+
+config:
+  storage:
+    # 스냅샷 설정 — 데이터 백업용
+    snapshots_path: /qdrant/snapshots
+    # 성능 최적화
+    performance:
+      max_search_threads: 0  # 0 = CPU 코어 수만큼
+  service:
+    # gRPC 포트 활성화 — 고성능 통신
+    grpc_port: 6334
+
+# 분산 모드 (대규모 데이터)
+# 단일 노드로 충분하면 false
+distributedMode: false
+
+# 스냅샷 PVC
+snapshotsPersistence:
+  enabled: true
+  size: 10Gi</code></pre>
+      </div>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">BASH</span>
+<pre class="line-numbers"><code class="language-bash"># 커스텀 values로 설치
+helm install qdrant qdrant/qdrant \
+  --namespace rag \
+  -f qdrant-values.yaml
+
+# 상태 확인
+kubectl get pods -n rag -l app.kubernetes.io/name=qdrant
+kubectl get svc -n rag</code></pre>
+      </div>
+
+      <div class="info-box info-box--tip">
+        <div class="info-box__title">TIP</div>
+        <p>
+          pgvector는 PostgreSQL의 다른 기능(관계형 데이터, 전문 검색)을 함께 활용할 수 있다는 장점이 있다.
+          Qdrant는 벡터 검색에 최적화되어 대규모 컬렉션에서 더 빠른 검색 성능을 제공한다.
+          이미 PostgreSQL을 사용하고 있다면 pgvector, 벡터 검색 성능이 최우선이면 Qdrant가 적합하다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 3. 인덱싱 파이프라인 배포 -->
+    <section>
+      <h2>인덱싱 파이프라인 배포</h2>
+      <p>
+        문서를 로드하고, 청킹하고, 임베딩하여 벡터 스토어에 저장하는 파이프라인은
+        상시 실행되는 서버가 아니라 <strong>배치 작업</strong>이다.
+        Kubernetes의 <strong>Job</strong>은 이런 일회성 작업에 적합하고,
+        <strong>CronJob</strong>은 주기적으로 반복 실행하는 데 사용한다.
+      </p>
+
+      <h3>Dockerfile</h3>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">BASH</span>
+<pre class="line-numbers"><code class="language-bash"># Dockerfile.ingest
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# 시스템 의존성 설치
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Python 패키지 설치
+COPY requirements-ingest.txt .
+RUN pip install --no-cache-dir -r requirements-ingest.txt
+
+# 소스 코드 복사
+COPY src/ ./src/
+
+# 인덱싱 스크립트 실행
+CMD ["python", "-m", "src.ingest"]</code></pre>
+      </div>
+
+      <h3>Job 매니페스트</h3>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">YAML</span>
+<pre class="line-numbers"><code class="language-yaml"># rag-ingest-job.yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: rag-ingest
+  namespace: rag
+spec:
+  backoffLimit: 3  # 실패 시 최대 3회 재시도
+  ttlSecondsAfterFinished: 86400  # 완료 후 24시간 뒤 자동 정리
+  template:
+    spec:
+      containers:
+      - name: ingest
+        image: rag-pipeline:latest
+        imagePullPolicy: Always
+        env:
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: rag-secrets
+              key: openai-api-key
+        - name: VECTOR_STORE_TYPE
+          valueFrom:
+            configMapKeyRef:
+              name: rag-config
+              key: vector-store-type
+        - name: VECTOR_STORE_URL
+          valueFrom:
+            secretKeyRef:
+              name: rag-secrets
+              key: vector-store-url
+        - name: CHUNK_SIZE
+          valueFrom:
+            configMapKeyRef:
+              name: rag-config
+              key: chunk-size
+        - name: CHUNK_OVERLAP
+          valueFrom:
+            configMapKeyRef:
+              name: rag-config
+              key: chunk-overlap
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "1000m"
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"
+        volumeMounts:
+        - name: docs-volume
+          mountPath: /app/docs
+      restartPolicy: Never
+      volumes:
+      - name: docs-volume
+        persistentVolumeClaim:
+          claimName: docs-pvc</code></pre>
+      </div>
+
+      <h3>CronJob으로 주기적 재인덱싱</h3>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">YAML</span>
+<pre class="line-numbers"><code class="language-yaml"># rag-ingest-cronjob.yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: rag-ingest-scheduled
+  namespace: rag
+spec:
+  schedule: "0 2 * * *"  # 매일 새벽 2시
+  concurrencyPolicy: Forbid  # 이전 Job이 아직 실행 중이면 새 Job을 건너뜀
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 3
+      template:
+        spec:
+          containers:
+          - name: ingest
+            image: rag-pipeline:latest
+            envFrom:
+            - secretRef:
+                name: rag-secrets
+            - configMapRef:
+                name: rag-config
+            resources:
+              requests:
+                memory: "2Gi"
+                cpu: "1000m"
+              limits:
+                memory: "4Gi"
+                cpu: "2000m"
+          restartPolicy: Never</code></pre>
+      </div>
+
+      <h3>Secret 관리</h3>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">BASH</span>
+<pre class="line-numbers"><code class="language-bash"># Secret 생성 — API 키와 DB 연결 정보
+kubectl create secret generic rag-secrets \
+  --namespace rag \
+  --from-literal=openai-api-key="sk-..." \
+  --from-literal=vector-store-url="postgresql://raguser:password@pgvector-cluster-rw.rag:5432/ragdb"
+
+# Secret 확인 (값은 표시되지 않음)
+kubectl get secret rag-secrets -n rag -o yaml</code></pre>
+      </div>
+
+      <div class="info-box info-box--warning">
+        <div class="info-box__title">WARNING</div>
+        <p>
+          <code>kubectl create secret</code>으로 생성하면 셸 히스토리에 API 키가 남을 수 있다.
+          프로덕션에서는 <strong>Sealed Secrets</strong>나 <strong>External Secrets Operator</strong>를 사용하여
+          Git에 암호화된 형태로 저장하고, 클러스터에서 자동으로 복호화되게 해야 한다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 4. API 서버 배포 -->
+    <section>
+      <h2>API 서버 배포</h2>
+      <p>
+        사용자 쿼리를 받아 RAG 체인을 실행하는 API 서버를 배포한다.
+        FastAPI로 구현하고, Deployment + Service + Ingress로 K8s에 노출한다.
+      </p>
+
+      <h3>FastAPI 서버 코드</h3>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">PYTHON</span>
+<pre class="line-numbers"><code class="language-python">"""
+src/api/main.py — RAG API 서버
+"""
+import os
+import time
+import logging
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel, Field
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_community.vectorstores import PGVector
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.runnables import RunnablePassthrough
+from prometheus_client import Counter, Histogram, make_asgi_app
+
+logger = logging.getLogger(__name__)
+
+# Prometheus 메트릭
+QUERY_COUNT = Counter("rag_query_total", "Total RAG queries")
+QUERY_LATENCY = Histogram("rag_query_latency_seconds", "Query latency")
+QUERY_ERRORS = Counter("rag_query_errors_total", "Total query errors")
+
+# RAG 체인 전역 변수
+rag_chain = None
+retriever = None
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """서버 시작 시 RAG 체인을 초기화한다."""
+    global rag_chain, retriever
+
+    # 벡터 스토어 연결
+    embeddings = OpenAIEmbeddings()
+    vectorstore = PGVector(
+        connection_string=os.environ["VECTOR_STORE_URL"],
+        embedding_function=embeddings,
+        collection_name="documents",
+    )
+    retriever = vectorstore.as_retriever(
+        search_type="similarity",
+        search_kwargs={"k": int(os.environ.get("TOP_K", "4"))},
+    )
+
+    # LLM 및 프롬프트 설정
+    llm = ChatOpenAI(
+        model=os.environ.get("LLM_MODEL", "gpt-4o-mini"),
+        temperature=0,
+    )
+    prompt = ChatPromptTemplate.from_template(
+        "다음 context를 기반으로 질문에 답변하라. "
+        "context에 없는 정보는 답변하지 마라.\n\n"
+        "Context:\n{context}\n\n"
+        "질문: {question}\n\n"
+        "답변:"
+    )
+
+    # RAG 체인 구성
+    rag_chain = (
+        {"context": retriever, "question": RunnablePassthrough()}
+        | prompt
+        | llm
+        | StrOutputParser()
+    )
+
+    logger.info("RAG chain initialized successfully")
+    yield
+    logger.info("Shutting down")
+
+
+app = FastAPI(title="RAG API", lifespan=lifespan)
+
+# Prometheus 메트릭 엔드포인트 마운트
+metrics_app = make_asgi_app()
+app.mount("/metrics", metrics_app)
+
+
+class QueryRequest(BaseModel):
+    question: str = Field(..., min_length=1, max_length=1000)
+    k: int = Field(default=4, ge=1, le=20)
+
+
+class Source(BaseModel):
+    content: str
+    metadata: dict
+
+
+class QueryResponse(BaseModel):
+    answer: str
+    sources: list[Source]
+    latency_ms: float
+
+
+@app.get("/health")
+async def health():
+    """Liveness probe 용 헬스체크."""
+    return {"status": "ok"}
+
+
+@app.get("/ready")
+async def ready():
+    """Readiness probe 용 준비 상태 확인."""
+    if rag_chain is None:
+        raise HTTPException(status_code=503, detail="Not ready")
+    return {"status": "ready"}
+
+
+@app.post("/query", response_model=QueryResponse)
+async def query(request: QueryRequest):
+    """RAG 쿼리를 실행하고 답변을 반환한다."""
+    QUERY_COUNT.inc()
+    start_time = time.time()
+
+    try:
+        # 검색
+        docs = retriever.invoke(request.question)
+        sources = [
+            Source(
+                content=doc.page_content[:500],
+                metadata=doc.metadata,
+            )
+            for doc in docs[: request.k]
+        ]
+
+        # 생성
+        answer = rag_chain.invoke(request.question)
+
+        latency = (time.time() - start_time) * 1000
+        QUERY_LATENCY.observe(latency / 1000)
+
+        return QueryResponse(
+            answer=answer,
+            sources=sources,
+            latency_ms=round(latency, 2),
+        )
+    except Exception as e:
+        QUERY_ERRORS.inc()
+        logger.error(f"Query failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))</code></pre>
+      </div>
+
+      <h3>Deployment + Service + HPA</h3>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">YAML</span>
+<pre class="line-numbers"><code class="language-yaml"># rag-api-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rag-api
+  namespace: rag
+  labels:
+    app: rag-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: rag-api
+  template:
+    metadata:
+      labels:
+        app: rag-api
+    spec:
+      containers:
+      - name: api
+        image: rag-api:latest
+        ports:
+        - containerPort: 8000
+        env:
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: rag-secrets
+              key: openai-api-key
+        - name: VECTOR_STORE_URL
+          valueFrom:
+            secretKeyRef:
+              name: rag-secrets
+              key: vector-store-url
+        envFrom:
+        - configMapRef:
+            name: rag-config
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        # Readiness probe — 준비되기 전까지 트래픽을 받지 않는다
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        # Liveness probe — 응답 없으면 Pod 재시작
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 15
+          periodSeconds: 10
+          failureThreshold: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rag-api-svc
+  namespace: rag
+spec:
+  selector:
+    app: rag-api
+  ports:
+  - port: 80
+    targetPort: 8000
+  type: ClusterIP
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: rag-api-hpa
+  namespace: rag
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: rag-api
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80</code></pre>
+      </div>
+
+      <h3>Ingress 설정</h3>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">YAML</span>
+<pre class="line-numbers"><code class="language-yaml"># rag-ingress.yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: rag-ingress
+  namespace: rag
+  annotations:
+    nginx.ingress.kubernetes.io/rate-limit: "30"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - rag-api.example.com
+    secretName: rag-tls
+  rules:
+  - host: rag-api.example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: rag-api-svc
+            port:
+              number: 80</code></pre>
+      </div>
+    </section>
+
+    <!-- 5. ConfigMap과 Secret 관리 -->
+    <section>
+      <h2>ConfigMap과 Secret 관리</h2>
+      <p>
+        설정을 코드에서 분리하는 것은 Kubernetes 운영의 기본 원칙이다.
+        <strong>Secret</strong>은 민감한 정보(API 키, DB 비밀번호)를, <strong>ConfigMap</strong>은 비민감한 설정을 관리한다.
+      </p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">YAML</span>
+<pre class="line-numbers"><code class="language-yaml"># rag-configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rag-config
+  namespace: rag
+data:
+  # 벡터 스토어 설정
+  vector-store-type: "pgvector"
+  TOP_K: "4"
+
+  # 청킹 설정
+  chunk-size: "1000"
+  chunk-overlap: "200"
+
+  # LLM 설정
+  LLM_MODEL: "gpt-4o-mini"
+  LLM_TEMPERATURE: "0"
+
+  # 임베딩 설정
+  EMBEDDING_MODEL: "text-embedding-3-small"</code></pre>
+      </div>
+
+      <div class="info-box info-box--tip">
+        <div class="info-box__title">TIP</div>
+        <p>
+          ConfigMap을 변경하면 기존 Pod에는 자동으로 반영되지 않는다.
+          변경을 적용하려면 Deployment를 재시작해야 한다:
+          <code>kubectl rollout restart deployment/rag-api -n rag</code>.
+          또는 ConfigMap의 해시를 Pod 어노테이션에 포함시켜 변경 시 자동으로 롤아웃되게 할 수 있다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 6. 모니터링과 로깅 -->
+    <section>
+      <h2>모니터링과 로깅</h2>
+      <p>
+        프로덕션에서 가장 중요한 것은 <strong>"지금 잘 동작하고 있는가?"</strong>를 실시간으로 아는 것이다.
+        RAG 시스템에서 모니터링해야 할 핵심 지표는 다음과 같다.
+      </p>
+
+      <h3>Prometheus 메트릭</h3>
+      <p>위 FastAPI 코드에 이미 포함된 Prometheus 메트릭을 ServiceMonitor로 수집한다:</p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">YAML</span>
+<pre class="line-numbers"><code class="language-yaml"># rag-servicemonitor.yaml
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: rag-api-monitor
+  namespace: rag
+spec:
+  selector:
+    matchLabels:
+      app: rag-api
+  endpoints:
+  - port: http
+    path: /metrics
+    interval: 15s</code></pre>
+      </div>
+
+      <h3>핵심 모니터링 지표</h3>
+      <ul>
+        <li><strong>쿼리 지연시간 (latency)</strong>: P50, P95, P99 응답 시간. P95가 3초를 넘으면 사용자 경험이 나빠진다.</li>
+        <li><strong>에러율</strong>: 5xx 응답 비율. 1%를 넘으면 알림을 보내야 한다.</li>
+        <li><strong>처리량 (throughput)</strong>: 초당 쿼리 수(QPS). 트래픽 패턴 파악과 용량 계획에 사용한다.</li>
+        <li><strong>벡터 스토어 연결</strong>: 연결 풀 사용률, 쿼리 지연시간.</li>
+        <li><strong>LLM API 지연시간</strong>: 외부 API 호출 시간. 전체 지연시간의 대부분을 차지한다.</li>
+      </ul>
+
+      <h3>구조화된 로깅</h3>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">PYTHON</span>
+<pre class="line-numbers"><code class="language-python">import logging
+import json
+from datetime import datetime
+
+
+class JSONFormatter(logging.Formatter):
+    """JSON 형식의 구조화된 로그 포매터."""
+
+    def format(self, record):
+        log_data = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "level": record.levelname,
+            "message": record.getMessage(),
+            "module": record.module,
+            "function": record.funcName,
+        }
+        if hasattr(record, "query"):
+            log_data["query"] = record.query
+        if hasattr(record, "latency_ms"):
+            log_data["latency_ms"] = record.latency_ms
+        if record.exc_info:
+            log_data["exception"] = self.formatException(record.exc_info)
+        return json.dumps(log_data, ensure_ascii=False)
+
+
+# 로거 설정
+handler = logging.StreamHandler()
+handler.setFormatter(JSONFormatter())
+logger = logging.getLogger("rag")
+logger.addHandler(handler)
+logger.setLevel(logging.INFO)</code></pre>
+      </div>
+
+      <div class="info-box info-box--info">
+        <div class="info-box__title">INFO</div>
+        <p>
+          JSON 형식의 로그는 Elasticsearch, Loki 등 로그 수집 시스템에서 파싱 없이 바로 인덱싱할 수 있다.
+          Grafana에서 Prometheus 메트릭과 로그를 함께 조회하면 문제 원인을 빠르게 파악할 수 있다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 7. 전체 배포 체크리스트 -->
+    <section>
+      <h2>전체 배포 체크리스트</h2>
+      <p>
+        RAG 시스템을 K8s에 배포하기 전에 다음 항목을 모두 확인해야 한다.
+        하나라도 빠지면 프로덕션에서 문제가 발생한다.
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>영역</th>
+            <th>확인 항목</th>
+            <th>비고</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td rowspan="3">네트워크</td>
+            <td>Ingress 설정 및 TLS 인증서</td>
+            <td>cert-manager + Let's Encrypt 권장</td>
+          </tr>
+          <tr>
+            <td>API 서버 ↔ 벡터 스토어 간 네트워크 정책</td>
+            <td>NetworkPolicy로 불필요한 접근 차단</td>
+          </tr>
+          <tr>
+            <td>외부 API (OpenAI 등) 접근 가능 여부</td>
+            <td>Egress 규칙 확인</td>
+          </tr>
+          <tr>
+            <td rowspan="2">스토리지</td>
+            <td>벡터 스토어 PVC 용량 및 StorageClass</td>
+            <td>데이터 증가에 대비하여 넉넉하게</td>
+          </tr>
+          <tr>
+            <td>백업 설정 (S3/GCS)</td>
+            <td>일일 자동 백업, 7일 보존</td>
+          </tr>
+          <tr>
+            <td rowspan="3">보안</td>
+            <td>API 키가 Secret으로 관리되는지</td>
+            <td>환경변수에 하드코딩 금지</td>
+          </tr>
+          <tr>
+            <td>RBAC 설정</td>
+            <td>최소 권한 원칙</td>
+          </tr>
+          <tr>
+            <td>컨테이너 이미지 취약점 스캔</td>
+            <td>Trivy 등 사용</td>
+          </tr>
+          <tr>
+            <td rowspan="3">모니터링</td>
+            <td>Prometheus 메트릭 수집 설정</td>
+            <td>ServiceMonitor 또는 PodMonitor</td>
+          </tr>
+          <tr>
+            <td>알림 규칙 (에러율, 지연시간)</td>
+            <td>Alertmanager 연동</td>
+          </tr>
+          <tr>
+            <td>로그 수집 (Loki/Elasticsearch)</td>
+            <td>구조화된 JSON 로깅</td>
+          </tr>
+          <tr>
+            <td rowspan="2">가용성</td>
+            <td>Pod 리소스 requests/limits 설정</td>
+            <td>OOM Kill 방지</td>
+          </tr>
+          <tr>
+            <td>HPA 설정 (min/max replicas)</td>
+            <td>트래픽 패턴에 맞게</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- 8. 다음 단계 -->
+    <section>
+      <h2>다음 단계</h2>
+      <p>
+        Kubernetes에 RAG 시스템을 배포했다. 하지만 배포는 끝이 아니라 시작이다.
+        프로덕션 환경에서는 문서가 계속 변경되고, 사용자 트래픽이 변동하고, 예상치 못한 장애가 발생한다.
+      </p>
+      <p>
+        다음 챕터에서는 <strong>프로덕션 운영</strong>을 다룬다.
+        문서 업데이트 전략, 캐싱을 통한 비용 최적화, 검색 품질 모니터링,
+        장애 대응, 보안, 스케일링까지 — RAG 시스템을 안정적으로 운영하는 데 필요한 모든 것을 다룬다.
+      </p>
+    </section>
+
+    <nav class="page-nav"></nav>
+  </main>
+</div>
+
+<script src="../js/nav.js?v=2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-yaml.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad:true, theme:'neutral', flowchart:{useMaxWidth:true}});</script>
+</body>
+</html>

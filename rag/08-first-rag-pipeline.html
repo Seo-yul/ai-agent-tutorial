@@ -1,0 +1,1135 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>첫 번째 RAG 파이프라인 - RAG 튜토리얼</title>
+  <link rel="stylesheet" href="../css/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.css">
+</head>
+<body>
+
+<header class="site-header">
+  <button class="hamburger" aria-label="메뉴">
+    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+  </button>
+  <a href="../index.html" class="site-header__title"><span>RAG</span> 튜토리얼</a>
+</header>
+
+<div class="layout">
+  <nav class="sidebar"></nav>
+  <main class="main">
+    <span class="chapter-badge chapter-badge--rag-basic">기본 과정</span>
+    <h1>첫 번째 RAG 파이프라인</h1>
+    <p class="chapter-subtitle">지금까지 배운 모든 구성요소를 조립하여 end-to-end RAG 시스템을 완성한다</p>
+
+    <!-- 1. 전체 아키텍처 복습 -->
+    <section>
+      <h2>전체 아키텍처 복습</h2>
+      <p>
+        기본 과정의 마지막 챕터이다.
+        지금까지 문서 로딩, 청킹, 임베딩, 벡터 저장, 검색, 생성을 하나씩 배워왔다.
+        이 챕터에서는 이 모든 요소를 하나의 프로젝트로 조립하여
+        <strong>실제로 실행 가능한 완전한 RAG 시스템</strong>을 구축한다.
+      </p>
+
+      <div class="mermaid-wrapper">
+<pre class="mermaid">
+graph LR
+    subgraph indexing ["Indexing Pipeline (1회)"]
+        direction LR
+        PDF["PDF 문서"] --> LOAD["문서 로딩<br/>(PyPDFLoader)"]
+        LOAD --> CHUNK["청킹<br/>(RecursiveCharacter<br/>TextSplitter)"]
+        CHUNK --> EMB1["임베딩<br/>(OpenAI)"]
+        EMB1 --> STORE["벡터 저장<br/>(pgvector/Qdrant)"]
+    end
+
+    subgraph query ["Query Pipeline (매 질문)"]
+        direction LR
+        Q["사용자 질문"] --> EMB2["질문 임베딩"]
+        EMB2 --> SEARCH["유사도 검색"]
+        STORE -.->|"벡터 매칭"| SEARCH
+        SEARCH --> CTX["Top-K 문서"]
+        CTX --> PROMPT["프롬프트 구성"]
+        Q --> PROMPT
+        PROMPT --> LLM["LLM"]
+        LLM --> ANS["답변 + 출처"]
+    end
+</pre>
+      </div>
+
+      <h3>단계별 사용 도구 요약</h3>
+
+      <table>
+        <thead>
+          <tr>
+            <th>단계</th>
+            <th>도구</th>
+            <th>파일</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>설정</strong></td>
+            <td>pydantic-settings, python-dotenv</td>
+            <td><code>config.py</code></td>
+          </tr>
+          <tr>
+            <td><strong>문서 로딩</strong></td>
+            <td>PyPDFLoader</td>
+            <td><code>ingest.py</code></td>
+          </tr>
+          <tr>
+            <td><strong>청킹</strong></td>
+            <td>RecursiveCharacterTextSplitter</td>
+            <td><code>ingest.py</code></td>
+          </tr>
+          <tr>
+            <td><strong>임베딩</strong></td>
+            <td>OpenAI text-embedding-3-small</td>
+            <td><code>ingest.py</code>, <code>retriever.py</code></td>
+          </tr>
+          <tr>
+            <td><strong>벡터 저장</strong></td>
+            <td>pgvector 또는 Qdrant</td>
+            <td><code>ingest.py</code>, <code>retriever.py</code></td>
+          </tr>
+          <tr>
+            <td><strong>검색</strong></td>
+            <td>LangChain Retriever</td>
+            <td><code>retriever.py</code></td>
+          </tr>
+          <tr>
+            <td><strong>생성</strong></td>
+            <td>LCEL Chain + ChatOpenAI/ChatAnthropic</td>
+            <td><code>chain.py</code></td>
+          </tr>
+          <tr>
+            <td><strong>실행</strong></td>
+            <td>argparse CLI</td>
+            <td><code>main.py</code></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- 2. 프로젝트 구조 -->
+    <section>
+      <h2>프로젝트 구조</h2>
+      <p>
+        하나의 거대한 스크립트에 모든 코드를 넣지 않는다.
+        역할별로 모듈을 분리하여 유지보수가 쉬운 구조로 만든다.
+      </p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">BASH</span>
+<pre class="line-numbers"><code class="language-bash">rag-tutorial/
+├── data/
+│   └── sample.pdf          # 테스트용 PDF 문서
+├── src/
+│   ├── __init__.py
+│   ├── config.py            # 환경 설정 (모델, DB 연결 등)
+│   ├── ingest.py            # 인덱싱 파이프라인 (로딩 → 청킹 → 임베딩 → 저장)
+│   ├── retriever.py         # 검색기 설정
+│   └── chain.py             # RAG 체인 (프롬프트 + LLM)
+├── main.py                  # CLI 진입점
+├── .env                     # 환경 변수 (API 키 등)
+└── pyproject.toml           # 프로젝트 의존성</code></pre>
+      </div>
+
+      <p>
+        먼저 프로젝트를 초기화하고 의존성을 설치한다.
+      </p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">BASH</span>
+<pre class="line-numbers"><code class="language-bash"># 프로젝트 디렉토리 생성
+mkdir -p rag-tutorial/data rag-tutorial/src
+cd rag-tutorial
+
+# uv로 프로젝트 초기화
+uv init
+
+# 의존성 추가
+uv add langchain langchain-openai langchain-anthropic langchain-community
+uv add langchain-postgres psycopg[binary]    # pgvector 사용 시
+uv add langchain-qdrant qdrant-client        # Qdrant 사용 시
+uv add pypdf                                  # PDF 로딩
+uv add pydantic-settings python-dotenv        # 설정 관리
+
+# .env 파일 생성
+cat > .env << 'EOF'
+OPENAI_API_KEY=sk-your-openai-api-key
+ANTHROPIC_API_KEY=sk-ant-your-anthropic-api-key
+
+# 벡터 스토어 선택: "pgvector" 또는 "qdrant"
+VECTOR_STORE_TYPE=pgvector
+
+# pgvector 설정
+POSTGRES_CONNECTION=postgresql+psycopg://user:password@localhost:5432/ragdb
+
+# Qdrant 설정
+QDRANT_URL=http://localhost:6333
+QDRANT_COLLECTION=my_documents
+
+# LLM 설정: "openai" 또는 "anthropic"
+LLM_PROVIDER=openai
+EOF
+
+touch src/__init__.py</code></pre>
+      </div>
+
+      <div class="info-box info-box--warning">
+        <div class="info-box__title">WARNING</div>
+        <p>
+          <code>.env</code> 파일에는 API 키가 포함되므로, <strong>절대 Git에 커밋하면 안 된다</strong>.
+          <code>.gitignore</code>에 <code>.env</code>를 반드시 추가하라.
+          GitHub에 API 키가 노출되면 즉시 악용될 수 있다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 3. Step 1: 설정 (config.py) -->
+    <section>
+      <h2>Step 1: 설정 (config.py)</h2>
+      <p>
+        모든 설정을 한 곳에서 관리한다.
+        <code>pydantic-settings</code>를 사용하면 환경 변수를 타입 안전하게 읽을 수 있고,
+        기본값 설정과 유효성 검증도 자동으로 처리된다.
+      </p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">PYTHON</span>
+<pre class="line-numbers"><code class="language-python"># src/config.py
+"""RAG 파이프라인 설정."""
+
+from enum import Enum
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class VectorStoreType(str, Enum):
+    """지원하는 벡터 스토어 종류."""
+    PGVECTOR = "pgvector"
+    QDRANT = "qdrant"
+
+
+class LLMProvider(str, Enum):
+    """지원하는 LLM 프로바이더."""
+    OPENAI = "openai"
+    ANTHROPIC = "anthropic"
+
+
+class Settings(BaseSettings):
+    """환경 변수 기반 설정 클래스."""
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+    )
+
+    # API 키
+    openai_api_key: str = ""
+    anthropic_api_key: str = ""
+
+    # 임베딩 설정
+    embedding_model: str = "text-embedding-3-small"
+
+    # 벡터 스토어 설정
+    vector_store_type: VectorStoreType = VectorStoreType.PGVECTOR
+    postgres_connection: str = "postgresql+psycopg://user:password@localhost:5432/ragdb"
+    qdrant_url: str = "http://localhost:6333"
+    qdrant_collection: str = "my_documents"
+    collection_name: str = "my_documents"
+
+    # 청킹 설정
+    chunk_size: int = 1000
+    chunk_overlap: int = 200
+
+    # 검색 설정
+    search_k: int = 4
+    search_type: str = "similarity"
+
+    # LLM 설정
+    llm_provider: LLMProvider = LLMProvider.OPENAI
+    openai_model: str = "gpt-4o-mini"
+    anthropic_model: str = "claude-sonnet-4-20250514"
+    llm_temperature: float = 0.0
+    llm_max_tokens: int = 1024
+
+
+# 싱글턴 인스턴스
+settings = Settings()</code></pre>
+      </div>
+
+      <div class="info-box info-box--tip">
+        <div class="info-box__title">TIP</div>
+        <p>
+          <code>pydantic-settings</code>의 <code>BaseSettings</code>는 환경 변수 이름을 자동으로 매핑한다.
+          예를 들어 <code>openai_api_key</code> 필드는 <code>OPENAI_API_KEY</code> 환경 변수에서 값을 읽는다.
+          대소문자 변환이 자동으로 이루어지므로 별도 매핑이 필요 없다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 4. Step 2: 인덱싱 파이프라인 (ingest.py) -->
+    <section>
+      <h2>Step 2: 인덱싱 파이프라인 (ingest.py)</h2>
+      <p>
+        인덱싱 파이프라인은 PDF 문서를 받아서 <strong>로딩 &rarr; 청킹 &rarr; 임베딩 &rarr; 벡터 저장</strong>을 수행한다.
+        이 과정은 문서당 한 번만 실행하면 된다.
+      </p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">PYTHON</span>
+<pre class="line-numbers"><code class="language-python"># src/ingest.py
+"""문서 인덱싱 파이프라인: 로딩 → 청킹 → 임베딩 → 벡터 저장."""
+
+import hashlib
+from pathlib import Path
+
+from langchain_community.document_loaders import PyPDFLoader
+from langchain_core.documents import Document
+from langchain_openai import OpenAIEmbeddings
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+from src.config import Settings, VectorStoreType, settings
+
+
+def load_pdf(file_path: str) -> list[Document]:
+    """PDF 파일을 로딩하여 Document 리스트로 반환한다."""
+    path = Path(file_path)
+    if not path.exists():
+        raise FileNotFoundError(f"파일을 찾을 수 없다: {file_path}")
+    if not path.suffix.lower() == ".pdf":
+        raise ValueError(f"PDF 파일만 지원한다: {file_path}")
+
+    loader = PyPDFLoader(str(path))
+    documents = loader.load()
+
+    print(f"  로딩 완료: {len(documents)}개 페이지")
+    return documents
+
+
+def chunk_documents(
+    documents: list[Document],
+    chunk_size: int | None = None,
+    chunk_overlap: int | None = None,
+) -> list[Document]:
+    """문서를 청크 단위로 분할한다."""
+    _chunk_size = chunk_size or settings.chunk_size
+    _chunk_overlap = chunk_overlap or settings.chunk_overlap
+
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=_chunk_size,
+        chunk_overlap=_chunk_overlap,
+        separators=["\n\n", "\n", ". ", " ", ""],
+        length_function=len,
+    )
+
+    chunks = splitter.split_documents(documents)
+
+    # 각 청크에 고유 ID 부여 (중복 인덱싱 방지용)
+    for chunk in chunks:
+        content_hash = hashlib.md5(chunk.page_content.encode()).hexdigest()[:12]
+        source = chunk.metadata.get("source", "unknown")
+        page = chunk.metadata.get("page", 0)
+        chunk.metadata["chunk_id"] = f"{source}:p{page}:{content_hash}"
+
+    print(f"  청킹 완료: {len(documents)}개 페이지 → {len(chunks)}개 청크")
+    print(f"  청크 크기: {_chunk_size}, 오버랩: {_chunk_overlap}")
+    return chunks
+
+
+def get_embeddings() -> OpenAIEmbeddings:
+    """임베딩 모델 인스턴스를 반환한다."""
+    return OpenAIEmbeddings(model=settings.embedding_model)
+
+
+def store_to_pgvector(chunks: list[Document], embeddings: OpenAIEmbeddings) -> None:
+    """청크를 pgvector에 저장한다."""
+    from langchain_postgres import PGVector
+
+    PGVector.from_documents(
+        documents=chunks,
+        embedding=embeddings,
+        collection_name=settings.collection_name,
+        connection=settings.postgres_connection,
+        pre_delete_collection=False,  # 기존 데이터 유지
+    )
+    print(f"  pgvector 저장 완료: {len(chunks)}개 청크")
+
+
+def store_to_qdrant(chunks: list[Document], embeddings: OpenAIEmbeddings) -> None:
+    """청크를 Qdrant에 저장한다."""
+    from langchain_qdrant import QdrantVectorStore
+    from qdrant_client import QdrantClient
+
+    client = QdrantClient(url=settings.qdrant_url)
+
+    QdrantVectorStore.from_documents(
+        documents=chunks,
+        embedding=embeddings,
+        url=settings.qdrant_url,
+        collection_name=settings.qdrant_collection,
+    )
+    print(f"  Qdrant 저장 완료: {len(chunks)}개 청크")
+
+
+def ingest(file_path: str) -> int:
+    """전체 인덱싱 파이프라인을 실행한다.
+
+    Args:
+        file_path: PDF 파일 경로.
+
+    Returns:
+        저장된 청크 수.
+    """
+    print(f"\n{'='*50}")
+    print(f"인덱싱 시작: {file_path}")
+    print(f"{'='*50}")
+
+    # 1. 문서 로딩
+    print("\n[1/4] 문서 로딩...")
+    documents = load_pdf(file_path)
+
+    # 2. 청킹
+    print("\n[2/4] 문서 청킹...")
+    chunks = chunk_documents(documents)
+
+    # 3. 임베딩 모델 준비
+    print("\n[3/4] 임베딩 모델 준비...")
+    embeddings = get_embeddings()
+    print(f"  모델: {settings.embedding_model}")
+
+    # 4. 벡터 스토어 저장
+    print(f"\n[4/4] 벡터 스토어 저장 ({settings.vector_store_type.value})...")
+    if settings.vector_store_type == VectorStoreType.PGVECTOR:
+        store_to_pgvector(chunks, embeddings)
+    elif settings.vector_store_type == VectorStoreType.QDRANT:
+        store_to_qdrant(chunks, embeddings)
+
+    print(f"\n{'='*50}")
+    print(f"인덱싱 완료! 총 {len(chunks)}개 청크 저장됨")
+    print(f"{'='*50}\n")
+
+    return len(chunks)</code></pre>
+      </div>
+
+      <h3>중복 인덱싱 방지</h3>
+      <p>
+        위 코드에서 <code>chunk_id</code>를 생성하는 로직에 주목하라.
+        소스 파일명, 페이지 번호, 내용의 MD5 해시를 조합하여 각 청크에 고유 ID를 부여한다.
+        이 ID를 활용하면 같은 문서를 다시 인덱싱할 때 중복을 감지하고 건너뛸 수 있다.
+      </p>
+
+      <div class="info-box info-box--info">
+        <div class="info-box__title">INFO</div>
+        <p>
+          프로덕션 환경에서는 중복 인덱싱 방지가 매우 중요하다.
+          같은 문서가 여러 번 저장되면 검색 시 동일한 내용이 중복 반환되어
+          LLM의 컨텍스트 윈도우를 낭비하게 된다.
+          <code>chunk_id</code>를 벡터 스토어의 document ID로 활용하면 upsert(있으면 업데이트, 없으면 삽입) 패턴을 적용할 수 있다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 5. Step 3: 검색기 설정 (retriever.py) -->
+    <section>
+      <h2>Step 3: 검색기 설정 (retriever.py)</h2>
+      <p>
+        검색기(Retriever)는 벡터 스토어에 연결하여 사용자 질문과 관련된 문서를 찾는 역할을 한다.
+        인덱싱 때 사용한 것과 <strong>동일한 임베딩 모델</strong>과 <strong>동일한 벡터 스토어</strong>에 연결해야 한다.
+      </p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">PYTHON</span>
+<pre class="line-numbers"><code class="language-python"># src/retriever.py
+"""벡터 스토어 연결 및 Retriever 설정."""
+
+from langchain_core.vectorstores import VectorStoreRetriever
+from langchain_openai import OpenAIEmbeddings
+
+from src.config import VectorStoreType, settings
+
+
+def get_embeddings() -> OpenAIEmbeddings:
+    """인덱싱 때와 동일한 임베딩 모델을 반환한다."""
+    return OpenAIEmbeddings(model=settings.embedding_model)
+
+
+def get_pgvector_store():
+    """pgvector 벡터 스토어 인스턴스를 반환한다."""
+    from langchain_postgres import PGVector
+
+    return PGVector(
+        collection_name=settings.collection_name,
+        connection=settings.postgres_connection,
+        embeddings=get_embeddings(),
+    )
+
+
+def get_qdrant_store():
+    """Qdrant 벡터 스토어 인스턴스를 반환한다."""
+    from langchain_qdrant import QdrantVectorStore
+    from qdrant_client import QdrantClient
+
+    client = QdrantClient(url=settings.qdrant_url)
+
+    return QdrantVectorStore(
+        client=client,
+        collection_name=settings.qdrant_collection,
+        embedding=get_embeddings(),
+    )
+
+
+def get_retriever() -> VectorStoreRetriever:
+    """설정에 따라 적절한 Retriever를 반환한다."""
+    if settings.vector_store_type == VectorStoreType.PGVECTOR:
+        store = get_pgvector_store()
+    elif settings.vector_store_type == VectorStoreType.QDRANT:
+        store = get_qdrant_store()
+    else:
+        raise ValueError(f"지원하지 않는 벡터 스토어: {settings.vector_store_type}")
+
+    retriever = store.as_retriever(
+        search_type=settings.search_type,
+        search_kwargs={"k": settings.search_k},
+    )
+
+    return retriever</code></pre>
+      </div>
+
+      <p>
+        이 모듈의 핵심은 <code>get_retriever()</code> 함수이다.
+        설정 파일의 <code>VECTOR_STORE_TYPE</code> 값에 따라 pgvector 또는 Qdrant에 연결하고,
+        LangChain Retriever 인터페이스를 반환한다.
+        호출하는 쪽에서는 어떤 벡터 스토어를 사용하는지 신경 쓸 필요 없이
+        <code>retriever.invoke(query)</code>만 호출하면 된다.
+      </p>
+    </section>
+
+    <!-- 6. Step 4: RAG 체인 (chain.py) -->
+    <section>
+      <h2>Step 4: RAG 체인 (chain.py)</h2>
+      <p>
+        RAG 체인은 검색기(Retriever), 프롬프트, LLM을 하나로 연결하는 핵심 모듈이다.
+        LCEL을 사용하여 각 컴포넌트를 파이프라인으로 구성한다.
+      </p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">PYTHON</span>
+<pre class="line-numbers"><code class="language-python"># src/chain.py
+"""RAG 체인: 검색 + 프롬프트 + LLM."""
+
+from langchain_core.documents import Document
+from langchain_core.language_models import BaseChatModel
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import Runnable, RunnableParallel, RunnablePassthrough
+
+from src.config import LLMProvider, settings
+from src.retriever import get_retriever
+
+
+# ── 프롬프트 템플릿 ──────────────────────────────────────
+
+RAG_PROMPT = ChatPromptTemplate.from_messages([
+    ("system", """너는 주어진 문서를 기반으로 질문에 답변하는 AI 어시스턴트이다.
+다음 규칙을 반드시 따르라:
+
+1. 반드시 제공된 문서 내용만을 근거로 답변하라.
+2. 문서에 답변할 수 있는 정보가 없으면 "제공된 문서에서 해당 정보를 찾을 수 없습니다"라고 명확히 말하라.
+3. 답변할 때 근거가 되는 문서의 출처(파일명, 페이지)를 함께 명시하라.
+4. 추측이나 문서 외부의 지식을 사용하지 마라.
+5. 답변은 명확하고 구조화된 형태로 작성하라."""),
+
+    ("human", """다음 문서를 참고하여 질문에 답변하라.
+
+[문서]
+{context}
+
+[질문]
+{question}"""),
+])
+
+
+# ── 유틸리티 함수 ──────────────────────────────────────
+
+def format_docs(docs: list[Document]) -> str:
+    """검색된 문서 리스트를 하나의 문자열로 합친다."""
+    formatted = []
+    for i, doc in enumerate(docs, 1):
+        source = doc.metadata.get("source", "알 수 없음")
+        page = doc.metadata.get("page", "")
+        header = f"[문서 {i}] (출처: {source}"
+        if page != "":
+            header += f", 페이지: {page}"
+        header += ")"
+        formatted.append(f"{header}\n{doc.page_content}")
+    return "\n\n".join(formatted)
+
+
+def extract_sources(docs: list[Document]) -> list[dict]:
+    """문서의 출처 정보만 추출한다."""
+    sources = []
+    seen = set()
+    for doc in docs:
+        source = doc.metadata.get("source", "N/A")
+        page = doc.metadata.get("page", "N/A")
+        key = f"{source}:{page}"
+        if key not in seen:
+            seen.add(key)
+            sources.append({
+                "source": source,
+                "page": page,
+                "preview": doc.page_content[:100] + "...",
+            })
+    return sources
+
+
+# ── LLM 팩토리 ──────────────────────────────────────
+
+def get_llm() -> BaseChatModel:
+    """설정에 따라 적절한 LLM 인스턴스를 반환한다."""
+    if settings.llm_provider == LLMProvider.OPENAI:
+        from langchain_openai import ChatOpenAI
+        return ChatOpenAI(
+            model=settings.openai_model,
+            temperature=settings.llm_temperature,
+            max_tokens=settings.llm_max_tokens,
+        )
+    elif settings.llm_provider == LLMProvider.ANTHROPIC:
+        from langchain_anthropic import ChatAnthropic
+        return ChatAnthropic(
+            model=settings.anthropic_model,
+            temperature=settings.llm_temperature,
+            max_tokens=settings.llm_max_tokens,
+        )
+    else:
+        raise ValueError(f"지원하지 않는 LLM 프로바이더: {settings.llm_provider}")
+
+
+# ── 체인 생성 ──────────────────────────────────────
+
+def create_rag_chain() -> Runnable:
+    """답변만 반환하는 기본 RAG 체인을 생성한다."""
+    retriever = get_retriever()
+    llm = get_llm()
+
+    chain = (
+        {"context": retriever | format_docs, "question": RunnablePassthrough()}
+        | RAG_PROMPT
+        | llm
+        | StrOutputParser()
+    )
+
+    return chain
+
+
+def create_rag_chain_with_sources() -> Runnable:
+    """답변과 출처를 함께 반환하는 RAG 체인을 생성한다."""
+    retriever = get_retriever()
+    llm = get_llm()
+
+    chain = RunnableParallel(
+        answer=(
+            {"context": retriever | format_docs, "question": RunnablePassthrough()}
+            | RAG_PROMPT
+            | llm
+            | StrOutputParser()
+        ),
+        sources=retriever | extract_sources,
+    )
+
+    return chain</code></pre>
+      </div>
+
+      <h3>LLM 교체가 쉬운 구조</h3>
+      <p>
+        <code>get_llm()</code> 함수는 <code>.env</code>의 <code>LLM_PROVIDER</code> 설정만 바꾸면
+        OpenAI에서 Claude로 즉시 전환할 수 있도록 설계되었다.
+        코드를 수정할 필요 없이 환경 변수 하나만 변경하면 된다.
+      </p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">BASH</span>
+<pre class="line-numbers"><code class="language-bash"># OpenAI 사용
+LLM_PROVIDER=openai
+
+# Claude로 전환 (코드 수정 불필요)
+LLM_PROVIDER=anthropic</code></pre>
+      </div>
+    </section>
+
+    <!-- 7. Step 5: 실행 (main.py) -->
+    <section>
+      <h2>Step 5: 실행 (main.py)</h2>
+      <p>
+        <code>main.py</code>는 CLI(Command Line Interface)로 두 가지 모드를 제공한다:
+        <strong>ingest</strong>(문서 인덱싱)와 <strong>query</strong>(질의응답)이다.
+      </p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">PYTHON</span>
+<pre class="line-numbers"><code class="language-python"># main.py
+"""RAG 파이프라인 CLI 진입점."""
+
+import argparse
+import sys
+import time
+
+
+def cmd_ingest(args: argparse.Namespace) -> None:
+    """문서 인덱싱 명령을 실행한다."""
+    from src.ingest import ingest
+
+    start = time.time()
+    num_chunks = ingest(args.path)
+    elapsed = time.time() - start
+
+    print(f"소요 시간: {elapsed:.1f}초")
+    print(f"저장된 청크 수: {num_chunks}개")
+
+
+def cmd_query(args: argparse.Namespace) -> None:
+    """질의응답 명령을 실행한다."""
+    from src.chain import create_rag_chain_with_sources
+
+    chain = create_rag_chain_with_sources()
+
+    question = args.question
+    print(f"\n질문: {question}")
+    print(f"{'─'*50}")
+
+    start = time.time()
+    result = chain.invoke(question)
+    elapsed = time.time() - start
+
+    print(f"\n답변:\n{result['answer']}")
+    print(f"\n{'─'*50}")
+    print("참고 출처:")
+    for src in result["sources"]:
+        print(f"  - {src['source']} (p.{src['page']})")
+    print(f"\n소요 시간: {elapsed:.1f}초")
+
+
+def cmd_interactive(args: argparse.Namespace) -> None:
+    """대화형 질의응답 모드를 실행한다."""
+    from src.chain import create_rag_chain_with_sources
+
+    chain = create_rag_chain_with_sources()
+
+    print("\n대화형 RAG 모드 (종료: quit 또는 Ctrl+C)")
+    print(f"{'='*50}")
+
+    while True:
+        try:
+            question = input("\n질문: ").strip()
+            if not question:
+                continue
+            if question.lower() in ("quit", "exit", "q"):
+                print("종료.")
+                break
+
+            start = time.time()
+            result = chain.invoke(question)
+            elapsed = time.time() - start
+
+            print(f"\n답변:\n{result['answer']}")
+            print(f"\n참고 출처:")
+            for src in result["sources"]:
+                print(f"  - {src['source']} (p.{src['page']})")
+            print(f"(소요 시간: {elapsed:.1f}초)")
+
+        except KeyboardInterrupt:
+            print("\n종료.")
+            break
+
+
+def main() -> None:
+    """CLI 진입점."""
+    parser = argparse.ArgumentParser(
+        description="RAG 파이프라인 CLI",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+사용 예시:
+  # PDF 문서 인덱싱
+  python main.py ingest --path data/sample.pdf
+
+  # 단일 질의
+  python main.py query "이 문서의 핵심 내용은 무엇인가?"
+
+  # 대화형 모드
+  python main.py interactive
+        """,
+    )
+
+    subparsers = parser.add_subparsers(dest="command", help="실행할 명령")
+
+    # ingest 명령
+    ingest_parser = subparsers.add_parser("ingest", help="PDF 문서를 인덱싱한다")
+    ingest_parser.add_argument(
+        "--path", required=True, help="인덱싱할 PDF 파일 경로"
+    )
+
+    # query 명령
+    query_parser = subparsers.add_parser("query", help="질문에 답변한다")
+    query_parser.add_argument("question", help="질문 내용")
+
+    # interactive 명령
+    subparsers.add_parser("interactive", help="대화형 질의응답 모드")
+
+    args = parser.parse_args()
+
+    if args.command is None:
+        parser.print_help()
+        sys.exit(1)
+
+    if args.command == "ingest":
+        cmd_ingest(args)
+    elif args.command == "query":
+        cmd_query(args)
+    elif args.command == "interactive":
+        cmd_interactive(args)
+
+
+if __name__ == "__main__":
+    main()</code></pre>
+      </div>
+    </section>
+
+    <!-- 8. 실행 및 결과 확인 -->
+    <section>
+      <h2>실행 및 결과 확인</h2>
+      <p>
+        모든 코드가 준비되었다. 실제로 실행해보자.
+        벡터 데이터베이스가 먼저 실행 중이어야 한다 (2장 환경 설정 참고).
+      </p>
+
+      <h3>1. 문서 인덱싱</h3>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">BASH</span>
+<pre class="line-numbers"><code class="language-bash"># data/ 디렉토리에 테스트용 PDF를 넣는다
+# (아무 PDF나 사용 가능. 논문, 기술 문서, 매뉴얼 등)
+
+python main.py ingest --path data/sample.pdf</code></pre>
+      </div>
+
+      <p>정상적으로 실행되면 다음과 같은 출력이 나타난다:</p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">BASH</span>
+<pre class="line-numbers"><code class="language-bash">==================================================
+인덱싱 시작: data/sample.pdf
+==================================================
+
+[1/4] 문서 로딩...
+  로딩 완료: 15개 페이지
+
+[2/4] 문서 청킹...
+  청킹 완료: 15개 페이지 → 42개 청크
+  청크 크기: 1000, 오버랩: 200
+
+[3/4] 임베딩 모델 준비...
+  모델: text-embedding-3-small
+
+[4/4] 벡터 스토어 저장 (pgvector)...
+  pgvector 저장 완료: 42개 청크
+
+==================================================
+인덱싱 완료! 총 42개 청크 저장됨
+==================================================
+
+소요 시간: 3.2초
+저장된 청크 수: 42개</code></pre>
+      </div>
+
+      <h3>2. 질의응답</h3>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">BASH</span>
+<pre class="line-numbers"><code class="language-bash">python main.py query "이 문서의 핵심 내용은 무엇인가?"</code></pre>
+      </div>
+
+      <p>예상 출력:</p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">BASH</span>
+<pre class="line-numbers"><code class="language-bash">질문: 이 문서의 핵심 내용은 무엇인가?
+──────────────────────────────────────────────────
+
+답변:
+이 문서는 RAG(Retrieval-Augmented Generation) 기술의 개요와 구현 방법을
+다루고 있다. 핵심 내용은 다음과 같다:
+
+1. RAG는 LLM에 외부 지식을 주입하여 정확한 답변을 생성하는 기법이다.
+2. 문서를 청크로 분할하고 벡터로 변환하여 저장하는 인덱싱 과정이 필요하다.
+3. 사용자 질문 시 유사도 검색으로 관련 문서를 찾아 LLM에 제공한다.
+
+[출처: data/sample.pdf, 페이지 1-3]
+
+──────────────────────────────────────────────────
+참고 출처:
+  - data/sample.pdf (p.1)
+  - data/sample.pdf (p.2)
+  - data/sample.pdf (p.5)
+  - data/sample.pdf (p.3)
+
+소요 시간: 2.8초</code></pre>
+      </div>
+
+      <h3>3. 대화형 모드</h3>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">BASH</span>
+<pre class="line-numbers"><code class="language-bash">python main.py interactive
+
+# 대화형 RAG 모드 (종료: quit 또는 Ctrl+C)
+# ==================================================
+#
+# 질문: RAG의 장점은?
+#
+# 답변:
+# ...
+#
+# 질문: 이전 답변을 더 자세히 설명해줘
+#
+# 답변:
+# ...
+#
+# 질문: quit
+# 종료.</code></pre>
+      </div>
+
+      <div class="info-box info-box--tip">
+        <div class="info-box__title">TIP</div>
+        <p>
+          대화형 모드에서는 매 질문마다 독립적으로 검색과 생성이 수행된다.
+          이전 대화 내용을 기억하지 않는다(stateless).
+          대화 히스토리를 유지하는 Conversational RAG는 심화 과정에서 다룬다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 9. 발생할 수 있는 문제와 해결 -->
+    <section>
+      <h2>발생할 수 있는 문제와 해결</h2>
+      <p>
+        처음 RAG를 구축하면 다양한 문제에 부딪힌다.
+        아래는 가장 흔한 문제와 해결 방법이다.
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>증상</th>
+            <th>원인</th>
+            <th>해결 방법</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>"관련 문서를 찾지 못함"</strong></td>
+            <td>청크 크기가 너무 크거나, 임베딩 모델의 한계</td>
+            <td>청크 크기를 500~800으로 줄이기, <code>text-embedding-3-large</code>로 교체</td>
+          </tr>
+          <tr>
+            <td><strong>"환각이 발생함"</strong></td>
+            <td>프롬프트에 환각 방지 지시가 약하거나, 관련 없는 문서가 검색됨</td>
+            <td>프롬프트에 "문서에 없으면 모른다고 하라" 강조, k값 줄이기</td>
+          </tr>
+          <tr>
+            <td><strong>"답변이 너무 일반적"</strong></td>
+            <td>검색된 문서가 너무 적거나, 청크 크기가 너무 작음</td>
+            <td>k값을 6~8로 증가, 청크 크기를 1200~1500으로 늘리기</td>
+          </tr>
+          <tr>
+            <td><strong>"속도가 느림"</strong></td>
+            <td>임베딩/LLM API 호출 지연, 벡터 검색 속도</td>
+            <td>임베딩 결과 캐시, 벡터 인덱스 튜닝 (HNSW), 스트리밍 적용</td>
+          </tr>
+          <tr>
+            <td><strong>"중복된 내용이 검색됨"</strong></td>
+            <td>유사한 청크가 여러 개 존재</td>
+            <td>MMR 검색(<code>search_type="mmr"</code>)으로 전환</td>
+          </tr>
+          <tr>
+            <td><strong>"API 키 오류"</strong></td>
+            <td><code>.env</code> 파일의 키가 잘못되었거나 누락됨</td>
+            <td><code>.env</code> 파일 확인, API 키 재발급</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box info-box--warning">
+        <div class="info-box__title">WARNING</div>
+        <p>
+          문제가 발생하면 한 번에 여러 설정을 바꾸지 마라.
+          <strong>한 번에 하나씩</strong> 변경하고 결과를 확인해야
+          어떤 변경이 효과가 있었는지 정확히 파악할 수 있다.
+          예를 들어, 청크 크기와 k값을 동시에 바꾸면 어느 쪽의 영향인지 알 수 없다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 10. 기본 과정 정리 -->
+    <section>
+      <h2>기본 과정 정리</h2>
+      <p>
+        기본 과정 8개 챕터를 통해 RAG의 전체 파이프라인을 처음부터 끝까지 구축했다.
+        각 챕터에서 다룬 핵심 개념을 정리한다.
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>챕터</th>
+            <th>주제</th>
+            <th>핵심 개념</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>01</strong></td>
+            <td>RAG란 무엇인가</td>
+            <td>RAG의 정의, 필요성, Naive/Advanced/Modular RAG</td>
+          </tr>
+          <tr>
+            <td><strong>02</strong></td>
+            <td>개발 환경 설정</td>
+            <td>Python, uv, Docker, 벡터 DB 설치</td>
+          </tr>
+          <tr>
+            <td><strong>03</strong></td>
+            <td>문서 로딩</td>
+            <td>PDF/HTML/Markdown 로더, LangChain Document 구조</td>
+          </tr>
+          <tr>
+            <td><strong>04</strong></td>
+            <td>텍스트 청킹</td>
+            <td>청킹 전략, RecursiveCharacterTextSplitter, 청크 크기 최적화</td>
+          </tr>
+          <tr>
+            <td><strong>05</strong></td>
+            <td>임베딩</td>
+            <td>벡터 표현, OpenAI 임베딩 모델, 유사도 측정</td>
+          </tr>
+          <tr>
+            <td><strong>06</strong></td>
+            <td>벡터 스토어</td>
+            <td>pgvector, Qdrant, 인덱싱과 검색</td>
+          </tr>
+          <tr>
+            <td><strong>07</strong></td>
+            <td>검색과 생성</td>
+            <td>Retriever, 프롬프트 설계, LCEL 체인, 출처 추적</td>
+          </tr>
+          <tr>
+            <td><strong>08</strong></td>
+            <td>첫 번째 RAG 파이프라인</td>
+            <td>end-to-end 프로젝트 구축, CLI 인터페이스</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>기본 RAG(Naive RAG)의 한계</h3>
+      <p>
+        지금까지 구축한 것은 <strong>Naive RAG</strong>이다.
+        동작은 하지만, 프로덕션 환경에서는 여러 한계에 부딪힌다:
+      </p>
+      <ul>
+        <li>
+          <strong>검색 품질 한계:</strong>
+          단순 유사도 검색만으로는 사용자의 의도를 정확히 파악하지 못한다.
+          "회사의 휴가 정책이 뭐야?"라는 질문에 "휴가"라는 단어가 포함된 무관한 문서가 검색될 수 있다.
+        </li>
+        <li>
+          <strong>키워드 매칭 실패:</strong>
+          의미적으로는 관련이 있지만 표현이 다른 경우(예: "연차" vs "유급 휴가")를 놓칠 수 있다.
+          벡터 검색이 이를 어느 정도 해결하지만, 완벽하지는 않다.
+        </li>
+        <li>
+          <strong>컨텍스트 부족/과잉:</strong>
+          고정된 k값으로는 질문의 복잡도에 맞는 적절한 양의 문서를 제공하기 어렵다.
+        </li>
+        <li>
+          <strong>다중 질문 처리 불가:</strong>
+          "A의 장점과 B의 단점을 비교하라"와 같은 복합 질문에 대응하기 어렵다.
+        </li>
+      </ul>
+
+      <div class="mermaid-wrapper">
+<pre class="mermaid">
+graph LR
+    subgraph naive ["현재: Naive RAG"]
+        Q1["질문"] --> S1["단순 유사도<br/>검색"]
+        S1 --> L1["LLM"]
+        L1 --> A1["답변"]
+    end
+
+    subgraph advanced ["다음: Advanced RAG"]
+        Q2["질문"] --> QT["쿼리 변환"]
+        QT --> HY["하이브리드 검색<br/>(벡터 + BM25)"]
+        HY --> RR["Re-ranking"]
+        RR --> COMP["컨텍스트 압축"]
+        COMP --> L2["LLM"]
+        L2 --> A2["고품질 답변"]
+    end
+
+    naive -.->|"심화 과정"| advanced
+</pre>
+      </div>
+    </section>
+
+    <!-- 11. 다음 단계 -->
+    <section>
+      <h2>다음 단계</h2>
+      <p>
+        기본 과정을 완료했다.
+        이제 동작하는 RAG 시스템이 있고, 그 한계도 이해했다.
+      </p>
+      <p>
+        심화 과정에서는 이 한계를 극복하는 <strong>고급 기법</strong>들을 하나씩 적용해 나갈 것이다:
+      </p>
+      <ul>
+        <li><strong>쿼리 변환(Query Transformation):</strong> 사용자 질문을 검색에 최적화된 형태로 변환한다. HyDE, 쿼리 분해, Step-back Prompting 등.</li>
+        <li><strong>하이브리드 검색(Hybrid Search):</strong> 벡터 검색과 키워드 검색(BM25)을 결합하여 검색 정확도를 높인다.</li>
+        <li><strong>Re-ranking:</strong> Cross-encoder를 사용하여 검색 결과를 재순위화한다.</li>
+        <li><strong>RAG 평가(Evaluation):</strong> RAGAS 프레임워크로 RAG 성능을 정량적으로 측정한다.</li>
+        <li><strong>프로덕션 배포:</strong> Kubernetes 환경에서 RAG 시스템을 운영한다.</li>
+      </ul>
+      <p>
+        각 기법을 적용할 때마다 이 챕터에서 만든 파이프라인 위에 점진적으로 추가하므로,
+        기본 코드를 잘 이해해두면 심화 과정이 훨씬 수월하다.
+      </p>
+    </section>
+
+    <nav class="page-nav"></nav>
+  </main>
+</div>
+
+<script src="../js/nav.js?v=2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad:true, theme:'neutral', flowchart:{useMaxWidth:true}});</script>
+</body>
+</html>

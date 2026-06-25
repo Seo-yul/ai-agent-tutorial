@@ -1,0 +1,806 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>검색과 생성 - RAG 튜토리얼</title>
+  <link rel="stylesheet" href="../css/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.css">
+</head>
+<body>
+
+<header class="site-header">
+  <button class="hamburger" aria-label="메뉴">
+    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+  </button>
+  <a href="../index.html" class="site-header__title"><span>RAG</span> 튜토리얼</a>
+</header>
+
+<div class="layout">
+  <nav class="sidebar"></nav>
+  <main class="main">
+    <span class="chapter-badge chapter-badge--rag-basic">기본 과정</span>
+    <h1>검색과 생성</h1>
+    <p class="chapter-subtitle">사용자 질문에서 답변까지 — Retrieval과 Generation의 전체 과정을 구현한다</p>
+
+    <!-- 1. 검색(Retrieval)이란? -->
+    <section>
+      <h2>검색(Retrieval)이란?</h2>
+      <p>
+        <strong>검색(Retrieval)</strong>은 사용자 질문과 가장 관련 있는 문서 청크를 벡터 스토어에서 찾아내는 과정이다.
+        앞선 챕터에서 다룬 인덱싱(Indexing)은 문서를 벡터화하여 저장하는 <strong>1회성 작업</strong>이었다면,
+        검색은 <strong>매 질문마다</strong> 수행되는 실시간 작업이다.
+      </p>
+      <p>
+        검색의 품질이 RAG 전체의 성능을 좌우한다.
+        아무리 뛰어난 LLM을 사용하더라도, 관련 없는 문서가 검색되면 쓸모없는 답변이 생성된다.
+        반대로, 정확한 문서가 검색되면 상대적으로 작은 모델로도 훌륭한 답변을 만들 수 있다.
+        <strong>"Garbage in, garbage out"</strong> 원칙이 RAG에 그대로 적용된다.
+      </p>
+
+      <div class="mermaid-wrapper">
+<pre class="mermaid">
+graph LR
+    Q["사용자 질문"] --> EMB["질문 임베딩"]
+    EMB --> SEARCH["벡터 유사도 검색"]
+    SEARCH --> TOPK["Top-K 문서 청크"]
+    TOPK --> PROMPT["프롬프트 구성"]
+    Q --> PROMPT
+    PROMPT --> LLM["LLM"]
+    LLM --> ANS["답변"]
+</pre>
+      </div>
+
+      <p>
+        위 다이어그램이 Query Pipeline의 전체 흐름이다.
+        이 챕터에서는 각 단계를 하나씩 구현하면서, 최종적으로 LCEL(LangChain Expression Language)로 전체를 연결할 것이다.
+      </p>
+
+      <div class="info-box info-box--info">
+        <div class="info-box__title">INFO</div>
+        <p>
+          검색 시 사용하는 임베딩 모델은 인덱싱 시 사용한 모델과 <strong>반드시 동일해야</strong> 한다.
+          서로 다른 모델을 사용하면 벡터 공간이 달라져 유사도 검색이 무의미해진다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 2. 기본 유사도 검색 -->
+    <section>
+      <h2>기본 유사도 검색</h2>
+      <p>
+        벡터 스토어에서 문서를 검색하는 가장 기본적인 방법은 <code>similarity_search()</code>이다.
+        사용자 질문을 벡터로 변환한 뒤, 벡터 공간에서 가장 가까운(= 가장 유사한) k개의 청크를 반환한다.
+      </p>
+
+      <h3>similarity_search — 기본 검색</h3>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">PYTHON</span>
+<pre class="line-numbers"><code class="language-python"># pgvector 기반 유사도 검색
+from langchain_postgres import PGVector
+from langchain_openai import OpenAIEmbeddings
+
+embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+
+store = PGVector(
+    collection_name="my_documents",
+    connection="postgresql+psycopg://user:pass@localhost:5432/ragdb",
+    embeddings=embeddings,
+)
+
+# 가장 기본적인 유사도 검색: 상위 4개 문서 반환
+results = store.similarity_search("RAG의 장점은 무엇인가?", k=4)
+
+for doc in results:
+    print(f"[출처: {doc.metadata.get('source', 'N/A')}]")
+    print(doc.page_content[:200])
+    print("---")</code></pre>
+      </div>
+
+      <p>
+        <code>k</code> 값은 검색 결과의 개수를 결정한다.
+        이 값의 선택은 생각보다 중요하다.
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>k 값</th>
+            <th>장점</th>
+            <th>단점</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>작음 (1~2)</strong></td>
+            <td>노이즈 최소화, 빠른 응답, 낮은 비용</td>
+            <td>관련 정보 누락 가능성 높음</td>
+          </tr>
+          <tr>
+            <td><strong>적당 (3~5)</strong></td>
+            <td>관련 정보 충분, 비용 합리적</td>
+            <td>일부 노이즈 유입 가능</td>
+          </tr>
+          <tr>
+            <td><strong>큼 (6~10+)</strong></td>
+            <td>관련 정보 누락 거의 없음</td>
+            <td>노이즈 증가, 비용 상승, LLM이 핵심을 놓칠 수 있음</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>similarity_search_with_score — 유사도 점수 포함</h3>
+      <p>
+        검색 결과에 유사도 점수(score)를 함께 반환받을 수 있다.
+        점수를 통해 검색 품질을 판단하고, 임계값(threshold)을 설정하여 관련성 낮은 문서를 필터링할 수 있다.
+      </p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">PYTHON</span>
+<pre class="line-numbers"><code class="language-python"># 유사도 점수와 함께 검색
+results_with_scores = store.similarity_search_with_score(
+    "RAG의 장점은 무엇인가?",
+    k=6,
+)
+
+for doc, score in results_with_scores:
+    print(f"[Score: {score:.4f}] {doc.page_content[:100]}...")
+
+# 점수 기반 필터링: 유사도가 낮은 문서 제거
+threshold = 0.3  # 거리 기반: 낮을수록 유사 (벡터 스토어마다 다름)
+filtered = [(doc, score) for doc, score in results_with_scores if score <= threshold]
+print(f"\n필터링 후: {len(results_with_scores)}개 → {len(filtered)}개")</code></pre>
+      </div>
+
+      <div class="info-box info-box--warning">
+        <div class="info-box__title">WARNING</div>
+        <p>
+          유사도 점수의 의미는 벡터 스토어마다 다르다.
+          pgvector는 <strong>거리(distance)</strong>를 반환하므로 <strong>낮을수록 유사</strong>하다.
+          Qdrant는 설정에 따라 <strong>코사인 유사도(높을수록 유사)</strong>를 반환할 수 있다.
+          사용하는 벡터 스토어의 문서를 반드시 확인하라.
+        </p>
+      </div>
+
+      <h3>Qdrant에서의 유사도 검색</h3>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">PYTHON</span>
+<pre class="line-numbers"><code class="language-python"># Qdrant 기반 유사도 검색
+from langchain_qdrant import QdrantVectorStore
+from qdrant_client import QdrantClient
+
+client = QdrantClient(url="http://localhost:6333")
+
+store = QdrantVectorStore(
+    client=client,
+    collection_name="my_documents",
+    embedding=embeddings,
+)
+
+# 기본 검색
+results = store.similarity_search("RAG의 장점은 무엇인가?", k=4)
+
+# 점수 포함 검색
+results_with_scores = store.similarity_search_with_score(
+    "RAG의 장점은 무엇인가?",
+    k=4,
+)
+
+for doc, score in results_with_scores:
+    # Qdrant의 코사인 유사도: 높을수록 유사 (0~1 범위)
+    print(f"[Score: {score:.4f}] {doc.page_content[:100]}...")</code></pre>
+      </div>
+    </section>
+
+    <!-- 3. LangChain Retriever 인터페이스 -->
+    <section>
+      <h2>LangChain Retriever 인터페이스</h2>
+      <p>
+        <code>similarity_search()</code>를 직접 호출해도 되지만,
+        LangChain에서는 <strong>Retriever</strong>라는 추상화 인터페이스를 제공한다.
+        Retriever는 검색 로직을 캡슐화하여, 체인(Chain)에 바로 연결할 수 있게 해준다.
+      </p>
+
+      <h3>VectorStore를 Retriever로 변환</h3>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">PYTHON</span>
+<pre class="line-numbers"><code class="language-python"># VectorStore → Retriever 변환
+retriever = store.as_retriever(
+    search_type="similarity",   # 검색 방식
+    search_kwargs={"k": 4},     # 검색 파라미터
+)
+
+# Retriever 사용: invoke()로 호출
+docs = retriever.invoke("RAG의 장점은 무엇인가?")
+
+for doc in docs:
+    print(f"[{doc.metadata.get('source', 'N/A')}]")
+    print(doc.page_content[:150])
+    print()</code></pre>
+      </div>
+
+      <p>
+        <code>as_retriever()</code>의 <code>search_type</code> 파라미터로 검색 방식을 변경할 수 있다.
+        각 방식의 특징을 비교해보자.
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>search_type</th>
+            <th>설명</th>
+            <th>적합한 상황</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong><code>"similarity"</code></strong></td>
+            <td>순수 유사도 기반 검색. 가장 유사한 k개 반환</td>
+            <td>기본적인 검색, 대부분의 경우에 적합</td>
+          </tr>
+          <tr>
+            <td><strong><code>"mmr"</code></strong></td>
+            <td>MMR(Maximal Marginal Relevance). 유사하면서도 다양한 결과 반환</td>
+            <td>검색 결과가 중복될 때, 다양한 관점이 필요할 때</td>
+          </tr>
+          <tr>
+            <td><strong><code>"similarity_score_threshold"</code></strong></td>
+            <td>유사도 점수가 임계값 이상인 문서만 반환</td>
+            <td>관련성이 낮은 문서를 완전히 제거하고 싶을 때</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">PYTHON</span>
+<pre class="line-numbers"><code class="language-python"># MMR 방식: 유사하면서도 다양한 결과
+retriever_mmr = store.as_retriever(
+    search_type="mmr",
+    search_kwargs={
+        "k": 4,               # 최종 반환 개수
+        "fetch_k": 20,         # 후보군 개수 (이 중에서 다양성 고려하여 k개 선택)
+        "lambda_mult": 0.5,    # 0: 최대 다양성, 1: 최대 유사성
+    },
+)
+
+# 임계값 방식: 유사도가 낮은 문서 자동 제거
+retriever_threshold = store.as_retriever(
+    search_type="similarity_score_threshold",
+    search_kwargs={
+        "score_threshold": 0.7,  # 유사도 0.7 이상만 반환
+    },
+)</code></pre>
+      </div>
+
+      <div class="info-box info-box--tip">
+        <div class="info-box__title">TIP</div>
+        <p>
+          MMR의 <code>lambda_mult</code> 값은 유사성과 다양성의 균형을 조절한다.
+          0에 가까울수록 다양한 내용의 문서를, 1에 가까울수록 유사한 문서를 반환한다.
+          보통 0.5~0.7 사이의 값이 좋은 결과를 낸다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 4. 프롬프트 설계 -->
+    <section>
+      <h2>프롬프트 설계 &mdash; RAG의 핵심</h2>
+      <p>
+        검색된 문서를 LLM에 어떻게 전달하느냐가 답변 품질을 크게 좌우한다.
+        RAG 프롬프트의 핵심은 <strong>검색된 문서(Context)와 사용자 질문(Question)을 구조화하여 LLM에 전달</strong>하는 것이다.
+      </p>
+
+      <h3>RAG 프롬프트의 기본 구조</h3>
+      <p>
+        RAG 프롬프트는 세 부분으로 구성된다:
+        <strong>System Prompt</strong>(LLM의 역할과 규칙 정의),
+        <strong>Context</strong>(검색된 문서),
+        <strong>Question</strong>(사용자 질문)이다.
+      </p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">PYTHON</span>
+<pre class="line-numbers"><code class="language-python">from langchain_core.prompts import ChatPromptTemplate
+
+# RAG 프롬프트 템플릿
+rag_prompt = ChatPromptTemplate.from_messages([
+    ("system", """너는 주어진 문서를 기반으로 질문에 답변하는 AI 어시스턴트이다.
+다음 규칙을 반드시 따르라:
+
+1. 반드시 제공된 문서 내용만을 근거로 답변하라.
+2. 문서에 답변할 수 있는 정보가 없으면 "제공된 문서에서 해당 정보를 찾을 수 없다"고 명확히 말하라.
+3. 답변할 때 근거가 되는 문서의 출처를 함께 명시하라.
+4. 추측이나 문서 외부의 지식을 사용하지 마라."""),
+
+    ("human", """다음 문서를 참고하여 질문에 답변하라.
+
+[문서]
+{context}
+
+[질문]
+{question}"""),
+])
+
+# 프롬프트 확인
+print(rag_prompt.format(
+    context="RAG는 검색 증강 생성 기법이다...",
+    question="RAG란 무엇인가?"
+))</code></pre>
+      </div>
+
+      <h3>좋은 RAG 프롬프트의 원칙</h3>
+      <p>
+        RAG 프롬프트를 작성할 때 반드시 고려해야 할 핵심 원칙들이 있다.
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>원칙</th>
+            <th>설명</th>
+            <th>예시 지시문</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>환각 방지</strong></td>
+            <td>문서에 없는 내용을 지어내지 못하게 명시적으로 금지</td>
+            <td>"문서에 없는 내용을 절대 지어내지 마라"</td>
+          </tr>
+          <tr>
+            <td><strong>출처 명시</strong></td>
+            <td>답변의 근거가 되는 문서 출처를 함께 표시하도록 지시</td>
+            <td>"답변의 근거가 된 문서의 출처를 [출처: ...]로 표시하라"</td>
+          </tr>
+          <tr>
+            <td><strong>불확실성 인정</strong></td>
+            <td>정보가 부족하면 솔직하게 인정하도록 지시</td>
+            <td>"정보가 부족하면 모른다고 말하라"</td>
+          </tr>
+          <tr>
+            <td><strong>형식 지정</strong></td>
+            <td>답변의 형식(길이, 구조, 톤)을 지정</td>
+            <td>"3문장 이내로 요약하라", "목록 형태로 정리하라"</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box info-box--warning">
+        <div class="info-box__title">WARNING</div>
+        <p>
+          "문서에 없으면 모른다고 말하라"는 지시를 빠뜨리면, LLM이 자체 학습 데이터를 활용하여
+          문서와 무관한 답변을 생성할 수 있다.
+          이 지시문은 RAG 프롬프트에서 <strong>절대 생략하면 안 되는</strong> 핵심 요소이다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 5. LLM 연결 -->
+    <section>
+      <h2>LLM 연결 &mdash; OpenAI와 Claude</h2>
+      <p>
+        프롬프트가 준비되었으면 LLM을 연결할 차례이다.
+        LangChain은 다양한 LLM 프로바이더를 통일된 인터페이스로 지원한다.
+        여기서는 가장 많이 사용되는 OpenAI와 Anthropic Claude를 다룬다.
+      </p>
+
+      <h3>OpenAI GPT</h3>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">PYTHON</span>
+<pre class="line-numbers"><code class="language-python">from langchain_openai import ChatOpenAI
+
+# OpenAI GPT-4o-mini: 비용 대비 성능이 우수한 모델
+llm_openai = ChatOpenAI(
+    model="gpt-4o-mini",
+    temperature=0,       # RAG에서는 0 권장: 일관되고 정확한 답변
+    max_tokens=1024,     # 최대 생성 토큰 수
+)
+
+# 직접 호출 테스트
+response = llm_openai.invoke("RAG란 무엇인가?")
+print(response.content)</code></pre>
+      </div>
+
+      <h3>Anthropic Claude</h3>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">PYTHON</span>
+<pre class="line-numbers"><code class="language-python">from langchain_anthropic import ChatAnthropic
+
+# Claude Sonnet: 균형 잡힌 성능
+llm_claude = ChatAnthropic(
+    model="claude-sonnet-4-20250514",
+    temperature=0,
+    max_tokens=1024,
+)
+
+# 직접 호출 테스트
+response = llm_claude.invoke("RAG란 무엇인가?")
+print(response.content)</code></pre>
+      </div>
+
+      <h3>temperature=0인 이유</h3>
+      <p>
+        RAG에서 <code>temperature</code>를 0으로 설정하는 이유는 명확하다.
+        RAG의 목적은 <strong>문서에 기반한 정확한 답변</strong>을 생성하는 것이지,
+        창의적인 텍스트를 만드는 것이 아니다.
+        temperature가 높으면 LLM이 문서 내용을 벗어나 자유롭게 생성할 가능성이 커진다.
+      </p>
+      <ul>
+        <li><strong>temperature=0</strong>: 가장 확률이 높은 토큰만 선택. 일관되고 재현 가능한 답변.</li>
+        <li><strong>temperature=0.3~0.7</strong>: 약간의 다양성. 요약이나 설명 생성에 사용 가능.</li>
+        <li><strong>temperature=1.0+</strong>: 높은 창의성. RAG에서는 부적합.</li>
+      </ul>
+
+      <h3>모델 비교</h3>
+
+      <table>
+        <thead>
+          <tr>
+            <th>모델</th>
+            <th>입력 비용 (1M 토큰)</th>
+            <th>출력 비용 (1M 토큰)</th>
+            <th>컨텍스트 윈도우</th>
+            <th>특징</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>GPT-4o-mini</strong></td>
+            <td>$0.15</td>
+            <td>$0.60</td>
+            <td>128K</td>
+            <td>가성비 최고. 대부분의 RAG에 충분</td>
+          </tr>
+          <tr>
+            <td><strong>Claude Sonnet</strong></td>
+            <td>$3.00</td>
+            <td>$15.00</td>
+            <td>200K</td>
+            <td>정확도와 지시 준수 능력 우수</td>
+          </tr>
+          <tr>
+            <td><strong>GPT-4o</strong></td>
+            <td>$2.50</td>
+            <td>$10.00</td>
+            <td>128K</td>
+            <td>높은 추론 능력. 복잡한 질문에 적합</td>
+          </tr>
+          <tr>
+            <td><strong>Claude Opus</strong></td>
+            <td>$15.00</td>
+            <td>$75.00</td>
+            <td>200K</td>
+            <td>최고 수준의 정확도. 비용 높음</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box info-box--tip">
+        <div class="info-box__title">TIP</div>
+        <p>
+          프로토타입 단계에서는 GPT-4o-mini로 시작하고,
+          정확도가 부족하다고 느껴질 때 상위 모델로 교체하는 것이 비용 효율적이다.
+          LangChain을 사용하면 <code>model</code> 파라미터 하나만 바꾸면 되므로 교체가 매우 쉽다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 6. RAG 체인 구성 -->
+    <section>
+      <h2>RAG 체인 구성 &mdash; 전체 연결</h2>
+      <p>
+        지금까지 Retriever, Prompt, LLM을 각각 준비했다.
+        이제 LCEL(LangChain Expression Language)을 사용하여 이 세 가지를 하나의 체인으로 연결할 차례이다.
+        LCEL은 <code>|</code>(파이프) 연산자로 컴포넌트를 연결하는 LangChain의 핵심 문법이다.
+      </p>
+
+      <h3>format_docs 함수</h3>
+      <p>
+        Retriever가 반환하는 문서 리스트를 LLM이 읽을 수 있는 하나의 문자열로 합쳐야 한다.
+        이 역할을 하는 함수가 <code>format_docs</code>이다.
+      </p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">PYTHON</span>
+<pre class="line-numbers"><code class="language-python">from langchain_core.documents import Document
+
+
+def format_docs(docs: list[Document]) -> str:
+    """검색된 문서 리스트를 하나의 문자열로 합친다."""
+    formatted = []
+    for i, doc in enumerate(docs, 1):
+        source = doc.metadata.get("source", "알 수 없음")
+        page = doc.metadata.get("page", "")
+        header = f"[문서 {i}] (출처: {source}"
+        if page:
+            header += f", 페이지: {page}"
+        header += ")"
+        formatted.append(f"{header}\n{doc.page_content}")
+    return "\n\n".join(formatted)</code></pre>
+      </div>
+
+      <h3>LCEL 체인 구성</h3>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">PYTHON</span>
+<pre class="line-numbers"><code class="language-python">from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnablePassthrough
+from langchain_core.output_parsers import StrOutputParser
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_postgres import PGVector
+
+# 1. 벡터 스토어 & Retriever
+embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+store = PGVector(
+    collection_name="my_documents",
+    connection="postgresql+psycopg://user:pass@localhost:5432/ragdb",
+    embeddings=embeddings,
+)
+retriever = store.as_retriever(search_kwargs={"k": 4})
+
+# 2. 프롬프트
+prompt = ChatPromptTemplate.from_messages([
+    ("system", """너는 주어진 문서를 기반으로 질문에 답변하는 AI 어시스턴트이다.
+문서에 없는 내용을 절대 지어내지 마라.
+답변할 수 없으면 "제공된 문서에서 해당 정보를 찾을 수 없다"고 말하라.
+답변 시 근거가 된 문서의 출처를 명시하라."""),
+    ("human", """[문서]
+{context}
+
+[질문]
+{question}"""),
+])
+
+# 3. LLM
+llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+
+# 4. LCEL 체인 구성
+chain = (
+    {"context": retriever | format_docs, "question": RunnablePassthrough()}
+    | prompt
+    | llm
+    | StrOutputParser()
+)
+
+# 5. 실행
+answer = chain.invoke("RAG의 장점은 무엇인가?")
+print(answer)</code></pre>
+      </div>
+
+      <h3>LCEL 체인의 동작 원리</h3>
+
+      <div class="mermaid-wrapper">
+<pre class="mermaid">
+graph LR
+    INPUT["사용자 질문<br/>(문자열)"] --> DICT["딕셔너리 분기"]
+
+    subgraph parallel ["병렬 실행"]
+        direction TB
+        DICT -->|"context 키"| RET["retriever"]
+        RET --> FMT["format_docs"]
+        DICT -->|"question 키"| PASS["RunnablePassthrough<br/>(질문 그대로 전달)"]
+    end
+
+    FMT --> PROMPT["ChatPromptTemplate<br/>(context + question 조합)"]
+    PASS --> PROMPT
+    PROMPT --> LLM["LLM<br/>(GPT-4o-mini)"]
+    LLM --> PARSER["StrOutputParser<br/>(문자열 추출)"]
+    PARSER --> OUTPUT["최종 답변<br/>(문자열)"]
+</pre>
+      </div>
+
+      <p>
+        체인의 각 단계를 해석하면 다음과 같다:
+      </p>
+      <ol>
+        <li>
+          <strong><code>{"context": retriever | format_docs, "question": RunnablePassthrough()}</code></strong>:
+          입력 문자열(질문)을 받아 딕셔너리로 변환한다.
+          <code>context</code> 키에는 질문을 retriever에 넘겨 검색한 뒤 format_docs로 문자열화한 결과가,
+          <code>question</code> 키에는 원래 질문이 그대로 들어간다.
+        </li>
+        <li>
+          <strong><code>| prompt</code></strong>:
+          딕셔너리의 <code>context</code>와 <code>question</code>이 프롬프트 템플릿의 변수에 바인딩된다.
+        </li>
+        <li>
+          <strong><code>| llm</code></strong>:
+          완성된 프롬프트가 LLM에 전달되어 답변이 생성된다.
+        </li>
+        <li>
+          <strong><code>| StrOutputParser()</code></strong>:
+          LLM 응답 객체에서 문자열(content)만 추출한다.
+        </li>
+      </ol>
+
+      <div class="info-box info-box--info">
+        <div class="info-box__title">INFO</div>
+        <p>
+          <code>RunnablePassthrough()</code>는 입력을 아무 변환 없이 그대로 다음 단계로 전달하는 역할을 한다.
+          여기서는 사용자 질문을 프롬프트의 <code>question</code> 변수에 그대로 전달하기 위해 사용한다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 7. 출처(Source) 추적 -->
+    <section>
+      <h2>출처(Source) 추적 &mdash; 답변의 근거 제시</h2>
+      <p>
+        RAG에서 출처 추적이 중요한 이유는 두 가지이다.
+        첫째, 사용자가 답변의 신뢰성을 직접 확인할 수 있다.
+        둘째, 환각(hallucination)이 발생했는지 검증할 수 있다.
+        답변에 "이 문서의 3페이지에 따르면..."이라는 근거가 있으면,
+        사용자는 해당 페이지를 열어 직접 확인할 수 있다.
+      </p>
+
+      <h3>답변과 출처를 함께 반환하는 체인</h3>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">PYTHON</span>
+<pre class="line-numbers"><code class="language-python">from langchain_core.runnables import RunnableParallel, RunnablePassthrough
+from langchain_core.output_parsers import StrOutputParser
+
+
+def format_docs(docs):
+    """문서를 하나의 문자열로 합친다."""
+    return "\n\n".join(
+        f"[문서 {i+1}] (출처: {d.metadata.get('source', 'N/A')}, "
+        f"페이지: {d.metadata.get('page', 'N/A')})\n{d.page_content}"
+        for i, d in enumerate(docs)
+    )
+
+
+def extract_sources(docs):
+    """문서의 출처 정보만 추출한다."""
+    sources = []
+    for doc in docs:
+        source_info = {
+            "source": doc.metadata.get("source", "N/A"),
+            "page": doc.metadata.get("page", "N/A"),
+            "content_preview": doc.page_content[:100] + "...",
+        }
+        sources.append(source_info)
+    return sources
+
+
+# 출처를 포함하는 RAG 체인
+chain_with_sources = RunnableParallel(
+    # 답변 생성 경로
+    answer=(
+        {"context": retriever | format_docs, "question": RunnablePassthrough()}
+        | prompt
+        | llm
+        | StrOutputParser()
+    ),
+    # 출처 추출 경로 (검색 결과에서 메타데이터만 추출)
+    sources=retriever | extract_sources,
+)
+
+# 실행
+result = chain_with_sources.invoke("RAG의 장점은 무엇인가?")
+
+print("=== 답변 ===")
+print(result["answer"])
+print("\n=== 출처 ===")
+for src in result["sources"]:
+    print(f"  - {src['source']} (p.{src['page']})")
+    print(f"    미리보기: {src['content_preview']}")</code></pre>
+      </div>
+
+      <p>
+        <code>RunnableParallel</code>을 사용하면 답변 생성과 출처 추출을 동시에(병렬로) 수행할 수 있다.
+        결과는 <code>{"answer": "...", "sources": [...]}</code> 형태의 딕셔너리로 반환된다.
+      </p>
+
+      <div class="info-box info-box--tip">
+        <div class="info-box__title">TIP</div>
+        <p>
+          프로덕션 환경에서는 출처 정보를 API 응답에 포함시키거나, UI에서 "출처 보기" 버튼으로 제공하는 것이 일반적이다.
+          사용자 신뢰를 높이는 가장 효과적인 방법이다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 8. 스트리밍 응답 -->
+    <section>
+      <h2>스트리밍 응답 &mdash; 사용자 경험 향상</h2>
+      <p>
+        RAG 시스템에서 LLM이 전체 답변을 생성할 때까지 기다리면, 사용자는 수 초 동안 빈 화면을 보게 된다.
+        <strong>스트리밍(Streaming)</strong>을 사용하면 LLM이 토큰을 생성하는 즉시 사용자에게 표시할 수 있어
+        체감 응답 시간이 크게 단축된다.
+      </p>
+      <p>
+        ChatGPT나 Claude가 답변을 한 글자씩 보여주는 것과 동일한 원리이다.
+      </p>
+
+      <h3>기본 스트리밍</h3>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">PYTHON</span>
+<pre class="line-numbers"><code class="language-python"># 스트리밍: 토큰 단위로 실시간 출력
+for chunk in chain.stream("RAG의 장점은 무엇인가?"):
+    print(chunk, end="", flush=True)
+print()  # 줄바꿈</code></pre>
+      </div>
+
+      <h3>비동기 스트리밍 (FastAPI 연동)</h3>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">PYTHON</span>
+<pre class="line-numbers"><code class="language-python">from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
+
+app = FastAPI()
+
+
+async def generate_stream(question: str):
+    """RAG 체인의 스트리밍 응답을 비동기 제너레이터로 변환한다."""
+    async for chunk in chain.astream(question):
+        yield chunk
+
+
+@app.get("/query")
+async def query(q: str):
+    """스트리밍 RAG 엔드포인트."""
+    return StreamingResponse(
+        generate_stream(q),
+        media_type="text/plain",
+    )</code></pre>
+      </div>
+
+      <div class="info-box info-box--info">
+        <div class="info-box__title">INFO</div>
+        <p>
+          LCEL 체인은 <code>.stream()</code>과 <code>.astream()</code>을 기본 지원한다.
+          동기 환경에서는 <code>stream()</code>을, 비동기 환경(FastAPI 등)에서는 <code>astream()</code>을 사용한다.
+          별도의 스트리밍 설정 없이 체인을 그대로 스트리밍할 수 있다는 것이 LCEL의 큰 장점이다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 9. 다음 단계 -->
+    <section>
+      <h2>다음 단계</h2>
+      <p>
+        이 챕터에서는 RAG의 Query Pipeline을 구성하는 모든 요소를 다루었다:
+        유사도 검색, Retriever 인터페이스, 프롬프트 설계, LLM 연결, LCEL 체인 구성, 출처 추적, 스트리밍.
+      </p>
+      <p>
+        다음 챕터에서는 지금까지 배운 모든 구성요소 &mdash; 문서 로딩, 청킹, 임베딩, 벡터 저장, 검색, 생성 &mdash; 를
+        하나로 조립하여 <strong>처음부터 끝까지 동작하는 완전한 RAG 파이프라인</strong>을 구축할 것이다.
+        실제로 실행 가능한 프로젝트 코드를 작성하고, CLI에서 문서 인덱싱과 질의응답을 수행해볼 것이다.
+      </p>
+    </section>
+
+    <nav class="page-nav"></nav>
+  </main>
+</div>
+
+<script src="../js/nav.js?v=2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad:true, theme:'neutral', flowchart:{useMaxWidth:true}});</script>
+</body>
+</html>

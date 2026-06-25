@@ -1,0 +1,879 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>임베딩 모델 - RAG 튜토리얼</title>
+  <link rel="stylesheet" href="../css/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.css">
+</head>
+<body>
+
+<header class="site-header">
+  <button class="hamburger" aria-label="메뉴">
+    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+  </button>
+  <a href="../index.html" class="site-header__title"><span>RAG</span> 튜토리얼</a>
+</header>
+
+<div class="layout">
+  <nav class="sidebar"></nav>
+  <main class="main">
+    <span class="chapter-badge chapter-badge--rag-basic">기본 과정</span>
+    <h1>임베딩 모델</h1>
+    <p class="chapter-subtitle">텍스트를 벡터로 변환하여 의미적 검색의 기반을 만든다</p>
+
+    <!-- 1. 임베딩이란? -->
+    <section>
+      <h2>임베딩이란?</h2>
+      <p>
+        <strong>임베딩(Embedding)</strong>은 텍스트를 고차원 벡터(숫자 배열)로 변환하는 과정이다.
+        사람이 읽는 자연어를 컴퓨터가 수학적으로 처리할 수 있는 형태로 바꾸는 것이다.
+        핵심 원리는 단순하다: <strong>의미적으로 유사한 텍스트는 벡터 공간에서 가까이 위치한다</strong>.
+      </p>
+      <p>
+        지도에서 서울과 부산의 좌표가 물리적 위치를 나타내는 것처럼,
+        임베딩은 텍스트의 <strong>의미적 좌표</strong>를 생성한다.
+        "고양이"와 "강아지"의 임베딩은 가까이 위치하고, "고양이"와 "미적분"의 임베딩은 멀리 떨어진다.
+      </p>
+
+      <div class="mermaid-wrapper">
+<pre class="mermaid">
+graph LR
+    A["텍스트\n'서울의 인구는?'"] --> B["임베딩 모델\n(Transformer)"]
+    B --> C["벡터\n[0.023, -0.112, 0.891, ..., 0.034]\n(1536차원)"]
+    style A fill:#e8f4f8,stroke:#333
+    style B fill:#fff3cd,stroke:#333
+    style C fill:#d4edda,stroke:#333
+</pre>
+      </div>
+
+      <p>
+        임베딩의 강력함은 <strong>벡터 연산으로 의미 관계를 포착</strong>할 수 있다는 데 있다.
+        가장 유명한 예시가 Word2Vec에서 발견된 관계이다:
+      </p>
+
+      <div class="info-box info-box--tip">
+        <div class="info-box__title">TIP</div>
+        <p>
+          <code>벡터("왕") - 벡터("남자") + 벡터("여자") ≈ 벡터("여왕")</code>
+        </p>
+        <p>
+          이는 임베딩이 단순한 키워드 매칭이 아니라 의미적 관계를 수학적으로 인코딩한다는 것을 보여준다.
+          RAG에서 이 특성이 왜 중요한가? 사용자가 "한국의 수도"라고 질문했을 때,
+          문서에 "서울"이라는 단어만 있어도 관련 문서를 찾아낼 수 있기 때문이다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 2. 임베딩 모델의 작동 원리 -->
+    <section>
+      <h2>임베딩 모델의 작동 원리</h2>
+      <p>
+        현대의 임베딩 모델은 거의 대부분 <strong>Transformer 기반 인코더(BERT 계열)</strong>로 구축된다.
+        입력 텍스트를 토큰으로 분리한 뒤, 여러 층의 Self-Attention을 거쳐 각 토큰의 문맥적 의미를 파악한다.
+      </p>
+
+      <h3>문장 임베딩 vs 토큰 임베딩</h3>
+      <p>
+        Transformer 인코더는 기본적으로 각 토큰에 대한 벡터를 출력한다.
+        하지만 RAG에서는 문장이나 문단 전체를 하나의 벡터로 표현해야 한다.
+        이때 <strong>Pooling 전략</strong>이 사용된다.
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Pooling 전략</th>
+            <th>방법</th>
+            <th>특징</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>CLS 토큰</strong></td>
+            <td>[CLS] 토큰의 출력 벡터를 문장 임베딩으로 사용</td>
+            <td>BERT 원본 방식. 단순하지만 정보 손실 가능</td>
+          </tr>
+          <tr>
+            <td><strong>Mean Pooling</strong></td>
+            <td>모든 토큰의 출력 벡터를 평균</td>
+            <td>가장 일반적. 문장 전체의 의미를 고르게 반영</td>
+          </tr>
+          <tr>
+            <td><strong>Max Pooling</strong></td>
+            <td>각 차원에서 최댓값 선택</td>
+            <td>핵심 특징을 강조하지만 노이즈에 민감</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="mermaid-wrapper">
+<pre class="mermaid">
+graph TD
+    INPUT["입력: '서울의 인구는?'"] --> TOK["토크나이저"]
+    TOK --> T1["[CLS]"]
+    TOK --> T2["서울"]
+    TOK --> T3["의"]
+    TOK --> T4["인구"]
+    TOK --> T5["는"]
+    TOK --> T6["?"]
+    T1 --> ENC["Transformer 인코더\n(Multi-Head Attention × N layers)"]
+    T2 --> ENC
+    T3 --> ENC
+    T4 --> ENC
+    T5 --> ENC
+    T6 --> ENC
+    ENC --> V1["v1"]
+    ENC --> V2["v2"]
+    ENC --> V3["v3"]
+    ENC --> V4["v4"]
+    ENC --> V5["v5"]
+    ENC --> V6["v6"]
+    V1 --> POOL["Mean Pooling"]
+    V2 --> POOL
+    V3 --> POOL
+    V4 --> POOL
+    V5 --> POOL
+    V6 --> POOL
+    POOL --> FINAL["문장 임베딩 벡터\n[0.023, -0.112, ..., 0.034]"]
+    style ENC fill:#fff3cd,stroke:#333
+    style POOL fill:#d4edda,stroke:#333
+</pre>
+      </div>
+
+      <h3>차원(Dimension)의 의미</h3>
+      <p>
+        임베딩 벡터의 차원은 모델이 텍스트의 의미를 표현하는 데 사용하는 숫자의 개수이다.
+        768차원이면 768개의 숫자로 텍스트의 의미를 표현하는 것이다.
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>차원</th>
+            <th>대표 모델</th>
+            <th>벡터당 용량</th>
+            <th>특성</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>384d</strong></td>
+            <td>all-MiniLM-L6-v2</td>
+            <td>1.5 KB</td>
+            <td>경량. 빠른 프로토타이핑에 적합</td>
+          </tr>
+          <tr>
+            <td><strong>768d</strong></td>
+            <td>BERT-base, BGE-base</td>
+            <td>3 KB</td>
+            <td>범용적. 비용 대비 성능 균형</td>
+          </tr>
+          <tr>
+            <td><strong>1024d</strong></td>
+            <td>BGE-large, E5-large</td>
+            <td>4 KB</td>
+            <td>고성능. 복잡한 의미 포착</td>
+          </tr>
+          <tr>
+            <td><strong>1536d</strong></td>
+            <td>text-embedding-3-small</td>
+            <td>6 KB</td>
+            <td>OpenAI 기본. API 기반</td>
+          </tr>
+          <tr>
+            <td><strong>3072d</strong></td>
+            <td>text-embedding-3-large</td>
+            <td>12 KB</td>
+            <td>최고 정밀도. 비용 높음</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box info-box--warning">
+        <div class="info-box__title">WARNING</div>
+        <p>
+          차원이 높을수록 의미 표현력이 증가하지만, <strong>저장 비용</strong>과 <strong>검색 속도</strong>에 직접적 영향을 준다.
+          100만 개 문서를 3072d로 저장하면 약 11.4 GB의 벡터 저장소가 필요하다.
+          반드시 비용과 성능을 함께 고려해야 한다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 3. 임베딩 모델 선택 기준 -->
+    <section>
+      <h2>임베딩 모델 선택 기준</h2>
+      <p>
+        임베딩 모델 선택은 RAG 시스템의 검색 품질을 결정짓는 가장 중요한 의사결정 중 하나이다.
+        아래는 개발자가 실제로 따져야 할 핵심 기준이다.
+      </p>
+
+      <h3>MTEB 벤치마크 읽는 법</h3>
+      <p>
+        <strong>MTEB(Massive Text Embedding Benchmark)</strong>는 임베딩 모델을 평가하는 표준 벤치마크이다.
+        8가지 카테고리(Classification, Clustering, PairClassification, Reranking, Retrieval, STS, Summarization, BitextMining)로
+        모델 성능을 측정한다.
+      </p>
+
+      <div class="info-box info-box--tip">
+        <div class="info-box__title">TIP</div>
+        <p>
+          RAG 개발자에게 가장 중요한 카테고리는 <strong>Retrieval</strong>이다.
+          이 카테고리의 nDCG@10 점수가 높은 모델이 RAG에서 좋은 검색 결과를 제공할 가능성이 높다.
+          한국어 RAG를 구축한다면 <code>Retrieval (kor)</code> 또는 다국어(multilingual) 벤치마크 결과를 확인해야 한다.
+          <a href="https://huggingface.co/spaces/mteb/leaderboard" target="_blank">MTEB Leaderboard</a>에서
+          최신 순위를 확인할 수 있다.
+        </p>
+      </div>
+
+      <h3>비용 vs 성능 트레이드오프</h3>
+      <p>
+        API 기반 모델(OpenAI, Cohere)은 구축이 간편하지만 사용량에 비례하여 비용이 발생한다.
+        오픈소스 모델(BGE, E5)은 초기 설정이 복잡하지만, 자체 호스팅하면 대량 처리 시 비용을 크게 절감할 수 있다.
+      </p>
+
+      <h3>모델 호스팅 방식</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>방식</th>
+            <th>장점</th>
+            <th>단점</th>
+            <th>적합한 경우</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>API 기반</strong></td>
+            <td>즉시 사용 가능, 인프라 관리 불필요</td>
+            <td>비용 발생, 데이터 외부 전송, 레이턴시</td>
+            <td>프로토타입, 소규모 서비스</td>
+          </tr>
+          <tr>
+            <td><strong>자체 호스팅</strong></td>
+            <td>비용 절감, 데이터 통제, 커스터마이징</td>
+            <td>GPU 인프라 필요, 운영 부담</td>
+            <td>대규모 서비스, 민감 데이터</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>차원 수와 저장소 비용 계산</h3>
+      <p>
+        벡터 저장소 용량은 다음 공식으로 추정할 수 있다:
+      </p>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">PYTHON</span>
+        <pre class="line-numbers"><code class="language-python"># 저장소 용량 계산
+dimensions = 1536       # 벡터 차원
+num_documents = 100_000 # 문서(청크) 수
+bytes_per_float = 4     # float32 = 4 bytes
+
+total_bytes = dimensions * num_documents * bytes_per_float
+total_gb = total_bytes / (1024 ** 3)
+print(f"필요 저장소: {total_gb:.2f} GB")  # 약 0.57 GB</code></pre>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>기준</th>
+            <th>핵심 질문</th>
+            <th>영향</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>검색 품질</td>
+            <td>MTEB Retrieval 점수가 충분한가?</td>
+            <td>RAG 답변 정확도</td>
+          </tr>
+          <tr>
+            <td>한국어 지원</td>
+            <td>한국어 벤치마크 결과가 있는가?</td>
+            <td>한국어 검색 정밀도</td>
+          </tr>
+          <tr>
+            <td>비용</td>
+            <td>토큰당 가격 × 예상 사용량은?</td>
+            <td>월간 운영 비용</td>
+          </tr>
+          <tr>
+            <td>레이턴시</td>
+            <td>임베딩 생성 시간이 허용 범위인가?</td>
+            <td>사용자 응답 속도</td>
+          </tr>
+          <tr>
+            <td>최대 토큰</td>
+            <td>청크 크기에 맞는 컨텍스트 윈도우인가?</td>
+            <td>청크 전략과 연동</td>
+          </tr>
+          <tr>
+            <td>호스팅</td>
+            <td>API 호출 vs 자체 서버 운영?</td>
+            <td>인프라 아키텍처</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- 4. 주요 임베딩 모델 비교 -->
+    <section>
+      <h2>주요 임베딩 모델 비교</h2>
+      <p>
+        2024~2025년 기준으로 RAG에서 가장 많이 사용되는 임베딩 모델을 비교한다.
+        각 모델의 특성을 이해하면 프로젝트에 맞는 최적의 선택을 할 수 있다.
+      </p>
+
+      <h3>OpenAI text-embedding-3 시리즈</h3>
+      <p>
+        OpenAI의 3세대 임베딩 모델이다. 가장 큰 특징은 <strong>Matryoshka Representation Learning</strong>을 지원하여
+        차원을 유연하게 축소할 수 있다는 점이다. 예를 들어 3072차원 모델을 1024차원이나 256차원으로 줄여 사용할 수 있다.
+        차원 축소 시에도 성능 저하가 최소화되도록 학습되어 있어, 저장 비용을 절감하면서도 검색 품질을 유지할 수 있다.
+      </p>
+
+      <h3>OpenAI text-embedding-ada-002</h3>
+      <p>
+        이전 세대 모델이지만 여전히 많은 프로덕션 시스템에서 사용 중이다.
+        1536차원 고정이며, 토큰당 비용이 3세대보다 높다.
+        신규 프로젝트에서는 text-embedding-3-small로 마이그레이션하는 것이 권장된다.
+      </p>
+
+      <h3>BGE (BAAI General Embedding)</h3>
+      <p>
+        베이징 인공지능 아카데미(BAAI)가 개발한 오픈소스 임베딩 모델이다.
+        MTEB 벤치마크에서 최상위권 성능을 기록했으며, 한국어를 포함한 다국어를 지원한다.
+        Apache 2.0 라이선스로 자유롭게 상업적 사용이 가능하다.
+        자체 호스팅이 가능하여 데이터 보안이 중요한 환경에 적합하다.
+      </p>
+
+      <h3>E5 (Microsoft)</h3>
+      <p>
+        Microsoft Research에서 개발한 임베딩 모델이다.
+        <strong>E5-Instruct</strong> 시리즈는 task-specific instruction을 입력에 추가하여
+        검색, 분류 등 특정 작업에 맞춘 임베딩을 생성할 수 있다.
+        예를 들어 검색 작업에서는 쿼리 앞에 <code>"query: "</code>를,
+        문서에는 <code>"passage: "</code>를 붙여 역할을 명시한다.
+      </p>
+
+      <h3>Cohere embed-v3</h3>
+      <p>
+        Cohere의 3세대 임베딩 모델이다. 100개 이상의 언어를 지원하는 강력한 다국어 모델이며,
+        Matryoshka 방식의 차원 축소를 지원한다.
+        <code>input_type</code> 파라미터로 검색 문서(search_document)와 검색 쿼리(search_query)를 구분하여
+        비대칭 검색 성능을 높인다.
+      </p>
+
+      <h3>Jina Embeddings v3</h3>
+      <p>
+        Jina AI가 개발한 임베딩 모델로, <strong>8192 토큰</strong>의 긴 컨텍스트 윈도우가 특징이다.
+        긴 문서를 분할하지 않고도 임베딩할 수 있어 청크 전략에 유연성을 제공한다.
+        다국어 지원이 뛰어나며, Late Chunking 기법을 활용하면 문서 전체의 문맥을 유지한 임베딩이 가능하다.
+      </p>
+
+      <h3>모델별 종합 비교</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>모델</th>
+            <th>차원</th>
+            <th>최대 토큰</th>
+            <th>한국어</th>
+            <th>비용 (1M 토큰)</th>
+            <th>유형</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>text-embedding-3-small</strong></td>
+            <td>1536</td>
+            <td>8191</td>
+            <td>좋음</td>
+            <td>$0.02</td>
+            <td>API</td>
+          </tr>
+          <tr>
+            <td><strong>text-embedding-3-large</strong></td>
+            <td>3072</td>
+            <td>8191</td>
+            <td>좋음</td>
+            <td>$0.13</td>
+            <td>API</td>
+          </tr>
+          <tr>
+            <td><strong>text-embedding-ada-002</strong></td>
+            <td>1536</td>
+            <td>8191</td>
+            <td>보통</td>
+            <td>$0.10</td>
+            <td>API (레거시)</td>
+          </tr>
+          <tr>
+            <td><strong>BGE-large-en-v1.5</strong></td>
+            <td>1024</td>
+            <td>512</td>
+            <td>보통</td>
+            <td>자체 호스팅</td>
+            <td>오픈소스</td>
+          </tr>
+          <tr>
+            <td><strong>BGE-M3</strong></td>
+            <td>1024</td>
+            <td>8192</td>
+            <td>우수</td>
+            <td>자체 호스팅</td>
+            <td>오픈소스</td>
+          </tr>
+          <tr>
+            <td><strong>E5-large-v2</strong></td>
+            <td>1024</td>
+            <td>512</td>
+            <td>보통</td>
+            <td>자체 호스팅</td>
+            <td>오픈소스</td>
+          </tr>
+          <tr>
+            <td><strong>Cohere embed-v3</strong></td>
+            <td>1024</td>
+            <td>512</td>
+            <td>우수</td>
+            <td>$0.10</td>
+            <td>API</td>
+          </tr>
+          <tr>
+            <td><strong>Jina Embeddings v3</strong></td>
+            <td>1024</td>
+            <td>8192</td>
+            <td>우수</td>
+            <td>$0.02</td>
+            <td>API / 오픈소스</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box info-box--info">
+        <div class="info-box__title">INFO</div>
+        <p>
+          한국어 RAG에서는 <strong>BGE-M3</strong>와 <strong>Cohere embed-v3</strong>가 특히 좋은 성능을 보인다.
+          BGE-M3는 Dense, Sparse, Multi-vector 세 가지 검색 방식을 동시에 지원하여 하이브리드 검색에도 유리하다.
+          API 편의성이 중요하다면 OpenAI text-embedding-3-small이 비용 대비 우수한 선택이다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 5. LangChain에서 임베딩 사용 -->
+    <section>
+      <h2>LangChain에서 임베딩 사용</h2>
+      <p>
+        LangChain은 다양한 임베딩 모델을 통일된 인터페이스로 사용할 수 있게 해준다.
+        <code>embed_query()</code>와 <code>embed_documents()</code> 두 가지 메서드만 알면 된다.
+      </p>
+
+      <h3>OpenAI 임베딩</h3>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">PYTHON</span>
+        <pre class="line-numbers"><code class="language-python">from langchain_openai import OpenAIEmbeddings
+
+# 임베딩 모델 초기화
+embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+
+# 단일 텍스트 임베딩
+vector = embeddings.embed_query("서울의 인구는?")
+print(f"차원: {len(vector)}")   # 1536
+print(f"처음 5개 값: {vector[:5]}")</code></pre>
+      </div>
+
+      <h3>차원 축소 (Matryoshka)</h3>
+      <p>
+        text-embedding-3 시리즈는 <code>dimensions</code> 파라미터로 벡터 차원을 줄일 수 있다.
+        차원을 줄이면 저장 비용이 감소하고 검색 속도가 빨라지지만, 검색 정밀도가 약간 떨어질 수 있다.
+      </p>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">PYTHON</span>
+        <pre class="line-numbers"><code class="language-python">from langchain_openai import OpenAIEmbeddings
+
+# 3072차원 → 1024차원으로 축소
+embeddings = OpenAIEmbeddings(
+    model="text-embedding-3-large",
+    dimensions=1024,
+)
+
+vector = embeddings.embed_query("서울의 인구는?")
+print(f"차원: {len(vector)}")  # 1024 (원래 3072에서 축소)</code></pre>
+      </div>
+
+      <h3>문서 임베딩 vs 쿼리 임베딩</h3>
+      <p>
+        LangChain의 임베딩 인터페이스는 <code>embed_documents()</code>와 <code>embed_query()</code>를 구분한다.
+        일부 모델(E5, Cohere 등)은 문서와 쿼리에 서로 다른 prefix를 붙여 비대칭 검색 성능을 높인다.
+        OpenAI 모델은 내부적으로 동일하게 처리하지만, 코드 레벨에서 구분하는 습관을 들이는 것이 좋다.
+      </p>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">PYTHON</span>
+        <pre class="line-numbers"><code class="language-python">from langchain_openai import OpenAIEmbeddings
+
+embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+
+# 여러 문서를 한 번에 임베딩 (배치 처리)
+documents = [
+    "서울특별시의 인구는 약 950만 명이다.",
+    "부산광역시의 인구는 약 330만 명이다.",
+    "대한민국의 수도는 서울이다.",
+]
+doc_vectors = embeddings.embed_documents(documents)
+print(f"문서 수: {len(doc_vectors)}")       # 3
+print(f"각 벡터 차원: {len(doc_vectors[0])}")  # 1536
+
+# 쿼리 임베딩 (단일)
+query_vector = embeddings.embed_query("한국에서 가장 큰 도시는?")
+print(f"쿼리 벡터 차원: {len(query_vector)}")  # 1536</code></pre>
+      </div>
+
+      <h3>HuggingFace 임베딩 (자체 호스팅)</h3>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">PYTHON</span>
+        <pre class="line-numbers"><code class="language-python">from langchain_huggingface import HuggingFaceEmbeddings
+
+# BGE-M3 모델 로드 (로컬 GPU 사용)
+embeddings = HuggingFaceEmbeddings(
+    model_name="BAAI/bge-m3",
+    model_kwargs={"device": "cuda"},  # GPU 사용
+    encode_kwargs={"normalize_embeddings": True},  # 정규화
+)
+
+vector = embeddings.embed_query("서울의 인구는?")
+print(f"차원: {len(vector)}")  # 1024</code></pre>
+      </div>
+
+      <div class="info-box info-box--tip">
+        <div class="info-box__title">TIP</div>
+        <p>
+          <code>normalize_embeddings=True</code>로 설정하면 벡터가 단위 벡터(길이 1)로 정규화된다.
+          이렇게 하면 코사인 유사도와 내적(Dot Product)의 결과가 동일해지므로,
+          더 빠른 내적 연산으로 코사인 유사도를 대체할 수 있다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 6. 유사도 측정 -->
+    <section>
+      <h2>유사도 측정</h2>
+      <p>
+        임베딩 벡터를 생성한 후, 두 벡터가 얼마나 유사한지를 수치로 계산하는 방법이 필요하다.
+        이것이 바로 <strong>거리 메트릭(Distance Metric)</strong>이다.
+        RAG의 검색 단계에서 "쿼리와 가장 가까운 문서 K개를 찾아라"라는 것은 결국 이 거리를 기준으로 정렬하는 것이다.
+      </p>
+
+      <h3>코사인 유사도 (Cosine Similarity)</h3>
+      <p>
+        두 벡터의 <strong>방향</strong>이 얼마나 유사한지를 측정한다.
+        벡터의 크기(길이)는 무시하고 방향만 비교하므로, 문서 길이에 영향을 받지 않는다.
+        결과 범위는 -1(정반대) ~ 0(무관) ~ 1(동일 방향)이며, 가장 널리 사용되는 메트릭이다.
+      </p>
+
+      <h3>내적 (Dot Product)</h3>
+      <p>
+        두 벡터의 내적은 방향과 크기를 모두 고려한다.
+        벡터가 정규화(단위 벡터)되어 있으면 코사인 유사도와 동일한 결과를 낸다.
+        정규화된 벡터에서는 내적이 연산 비용이 낮아 벡터 DB에서 주로 사용된다.
+      </p>
+
+      <h3>유클리드 거리 (L2 Distance)</h3>
+      <p>
+        두 벡터 사이의 <strong>절대적 거리</strong>를 측정한다.
+        값이 작을수록 유사하다. 정규화되지 않은 벡터에서 절대적 크기가 의미를 가질 때 사용한다.
+        대부분의 RAG 시스템에서는 코사인 유사도가 더 적합하다.
+      </p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">PYTHON</span>
+        <pre class="line-numbers"><code class="language-python">import numpy as np
+from langchain_openai import OpenAIEmbeddings
+
+embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+
+# 세 개의 텍스트 임베딩
+texts = [
+    "고양이가 소파에서 낮잠을 자고 있다",
+    "강아지가 침대에서 잠을 자고 있다",
+    "주식 시장이 급등했다",
+]
+vectors = embeddings.embed_documents(texts)
+query = embeddings.embed_query("반려동물이 자고 있는 모습")
+
+# NumPy 배열로 변환
+vectors = np.array(vectors)
+query = np.array(query)
+
+# 코사인 유사도 계산
+def cosine_similarity(a, b):
+    return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
+
+for i, text in enumerate(texts):
+    sim = cosine_similarity(query, vectors[i])
+    print(f"[{sim:.4f}] {text}")
+
+# 예상 출력:
+# [0.8234] 고양이가 소파에서 낮잠을 자고 있다
+# [0.8012] 강아지가 침대에서 잠을 자고 있다
+# [0.1523] 주식 시장이 급등했다</code></pre>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>메트릭</th>
+            <th>수학적 정의</th>
+            <th>범위</th>
+            <th>유사 = ?</th>
+            <th>사용 시점</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>코사인 유사도</strong></td>
+            <td>cos(&theta;) = (A &middot; B) / (||A|| &times; ||B||)</td>
+            <td>-1 ~ 1</td>
+            <td>1에 가까움</td>
+            <td>가장 일반적. 문서 길이 무관</td>
+          </tr>
+          <tr>
+            <td><strong>내적</strong></td>
+            <td>A &middot; B = &Sigma; a<sub>i</sub>b<sub>i</sub></td>
+            <td>-&infin; ~ +&infin;</td>
+            <td>큰 값</td>
+            <td>정규화된 벡터에서 코사인 대체</td>
+          </tr>
+          <tr>
+            <td><strong>유클리드 거리</strong></td>
+            <td>||A - B||<sub>2</sub> = &radic;&Sigma;(a<sub>i</sub> - b<sub>i</sub>)&sup2;</td>
+            <td>0 ~ +&infin;</td>
+            <td>0에 가까움</td>
+            <td>절대적 거리가 의미 있을 때</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box info-box--info">
+        <div class="info-box__title">INFO</div>
+        <p>
+          대부분의 임베딩 모델은 정규화된 벡터를 출력하도록 학습된다.
+          이 경우 코사인 유사도, 내적, 유클리드 거리의 순위(ranking)가 모두 동일하다.
+          벡터 스토어 설정 시 어떤 메트릭을 선택하든 검색 결과는 같지만,
+          내적이 연산 비용이 가장 낮으므로 대규모 시스템에서는 내적을 선택하는 것이 유리하다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 7. 임베딩 비용 계산 -->
+    <section>
+      <h2>임베딩 비용 계산</h2>
+      <p>
+        프로덕션 RAG 시스템에서 임베딩 비용은 크게 두 가지로 나뉜다:
+        문서를 처음 임베딩하는 <strong>1회성 비용</strong>과, 사용자 쿼리를 매번 임베딩하는 <strong>지속 비용</strong>이다.
+      </p>
+
+      <h3>문서 임베딩 비용 (1회성)</h3>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">PYTHON</span>
+        <pre class="line-numbers"><code class="language-python"># 10,000 페이지 PDF 문서의 임베딩 비용 추정
+pages = 10_000
+tokens_per_page = 500       # 평균 500 토큰/페이지 (한국어 기준)
+chunks_per_page = 2         # 페이지당 평균 2개 청크
+overhead = 1.1              # 청크 오버랩으로 인한 10% 추가
+
+total_tokens = pages * tokens_per_page * chunks_per_page * overhead
+print(f"총 토큰 수: {total_tokens:,.0f}")  # 11,000,000
+
+# OpenAI text-embedding-3-small: $0.02 / 1M tokens
+cost_small = (total_tokens / 1_000_000) * 0.02
+print(f"3-small 비용: ${cost_small:.2f}")  # $0.22
+
+# OpenAI text-embedding-3-large: $0.13 / 1M tokens
+cost_large = (total_tokens / 1_000_000) * 0.13
+print(f"3-large 비용: ${cost_large:.2f}")  # $1.43</code></pre>
+      </div>
+
+      <h3>쿼리 임베딩 비용 (지속)</h3>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">PYTHON</span>
+        <pre class="line-numbers"><code class="language-python"># 일일 쿼리 비용 추정
+daily_queries = 10_000
+avg_query_tokens = 30       # 평균 쿼리 길이
+
+daily_tokens = daily_queries * avg_query_tokens
+monthly_tokens = daily_tokens * 30
+
+# text-embedding-3-small 기준
+monthly_cost = (monthly_tokens / 1_000_000) * 0.02
+print(f"월간 쿼리 토큰: {monthly_tokens:,.0f}")    # 9,000,000
+print(f"월간 쿼리 비용: ${monthly_cost:.2f}")       # $0.18</code></pre>
+      </div>
+
+      <div class="info-box info-box--tip">
+        <div class="info-box__title">TIP</div>
+        <p>
+          API 기반 임베딩의 비용은 대부분 매우 저렴하다.
+          10,000 페이지 문서 + 일일 10,000 쿼리를 운영해도 text-embedding-3-small 기준으로 월 $0.40 수준이다.
+          임베딩보다는 <strong>LLM 생성 비용</strong>이 RAG 시스템 운영비의 대부분을 차지한다.
+          다만, 수억 건 이상의 문서를 다루는 대규모 시스템에서는 자체 호스팅이 비용 효율적이다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 8. 다국어 임베딩과 한국어 -->
+    <section>
+      <h2>다국어 임베딩과 한국어</h2>
+      <p>
+        한국어 RAG 시스템을 구축할 때는 임베딩 모델의 한국어 처리 능력을 반드시 검증해야 한다.
+        영어에서 높은 성능을 보이는 모델이 한국어에서는 그렇지 않을 수 있다.
+      </p>
+
+      <h3>한국어 토크나이징 특성</h3>
+      <p>
+        한국어는 영어와 토크나이징 방식이 크게 다르다.
+        영어는 공백으로 단어가 자연스럽게 분리되지만, 한국어는 교착어로서 조사, 어미가 결합되어 있다.
+        대부분의 임베딩 모델은 WordPiece 또는 BPE 기반 토크나이저를 사용하는데,
+        한국어 학습 데이터가 부족한 모델에서는 한국어 텍스트가 지나치게 많은 토큰으로 분리된다.
+      </p>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">PYTHON</span>
+        <pre class="line-numbers"><code class="language-python">import tiktoken
+
+# OpenAI 모델의 토크나이저
+enc = tiktoken.encoding_for_model("text-embedding-3-small")
+
+# 같은 의미의 영어와 한국어 비교
+en_text = "The population of Seoul is about 9.5 million."
+ko_text = "서울특별시의 인구는 약 950만 명이다."
+
+en_tokens = enc.encode(en_text)
+ko_tokens = enc.encode(ko_text)
+
+print(f"영어: {len(en_tokens)} 토큰")  # 약 10 토큰
+print(f"한국어: {len(ko_tokens)} 토큰")  # 약 18 토큰
+
+# 한국어는 같은 의미를 전달하는 데 더 많은 토큰을 소비한다.
+# 이는 비용 증가와 컨텍스트 윈도우 압박으로 이어진다.</code></pre>
+      </div>
+
+      <h3>다국어 모델 vs 한국어 특화 모델</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>유형</th>
+            <th>대표 모델</th>
+            <th>장점</th>
+            <th>단점</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>다국어 모델</strong></td>
+            <td>BGE-M3, Cohere embed-v3, Jina v3</td>
+            <td>영어+한국어 혼합 검색 가능, 유지보수 단순</td>
+            <td>한국어 특화 모델 대비 정밀도 약간 낮을 수 있음</td>
+          </tr>
+          <tr>
+            <td><strong>한국어 특화</strong></td>
+            <td>KoSimCSE, ko-sroberta</td>
+            <td>한국어 검색 정밀도 높음, 효율적 토크나이징</td>
+            <td>영어 검색 불가, 모델 규모 제한적</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>한국어 검색 품질 테스트</h3>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">PYTHON</span>
+        <pre class="line-numbers"><code class="language-python">from langchain_openai import OpenAIEmbeddings
+import numpy as np
+
+embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+
+# 한국어 의미 검색 테스트
+documents = [
+    "대한민국의 수도는 서울특별시이다.",
+    "김치는 한국의 대표적인 발효 음식이다.",
+    "한강은 서울을 가로지르는 주요 하천이다.",
+    "비트코인 가격이 사상 최고치를 기록했다.",
+    "제주도는 한국에서 가장 큰 섬이다.",
+]
+doc_vectors = np.array(embeddings.embed_documents(documents))
+
+# 다양한 표현으로 같은 의미의 질문
+queries = [
+    "한국의 수도가 어디야?",          # 직접적 질문
+    "서울은 어느 나라 수도인가?",       # 역방향 질문
+    "대한민국 행정 중심지",             # 다른 표현
+]
+
+for query in queries:
+    query_vec = np.array(embeddings.embed_query(query))
+    similarities = np.dot(doc_vectors, query_vec)
+    top_idx = np.argmax(similarities)
+    print(f"Q: {query}")
+    print(f"A: [{similarities[top_idx]:.4f}] {documents[top_idx]}")
+    print()</code></pre>
+      </div>
+
+      <div class="info-box info-box--warning">
+        <div class="info-box__title">WARNING</div>
+        <p>
+          한국어 RAG를 구축할 때는 반드시 <strong>실제 도메인 데이터로 검색 품질을 테스트</strong>해야 한다.
+          벤치마크 점수와 실제 서비스에서의 성능은 다를 수 있다.
+          특히 전문 용어(법률, 의료, 금융 등)가 많은 도메인에서는 일반 벤치마크가 현실을 반영하지 못할 수 있다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 9. 다음 단계 -->
+    <section>
+      <h2>다음 단계</h2>
+      <p>
+        이 챕터에서 텍스트를 벡터로 변환하는 임베딩의 원리, 모델 선택 기준, 유사도 측정 방법을 다루었다.
+        임베딩은 RAG 파이프라인에서 <strong>"의미를 숫자로 번역하는"</strong> 역할을 한다.
+      </p>
+      <p>
+        다음 챕터에서는 이렇게 생성된 임베딩 벡터를 <strong>저장하고 효율적으로 검색</strong>하는 벡터 스토어를 다룬다.
+        pgvector와 Qdrant를 중심으로, 벡터 인덱싱 알고리즘과 프로덕션 배포까지 살펴본다.
+      </p>
+
+      <div class="mermaid-wrapper">
+<pre class="mermaid">
+graph LR
+    A["문서 로드\n(ch.03)"] --> B["텍스트 분할\n(ch.04)"]
+    B --> C["임베딩\n(ch.05)"]
+    C --> D["벡터 스토어\n(ch.06)"]
+    D --> E["검색 + 생성\n(ch.07~)"]
+    style C fill:#fff3cd,stroke:#333,stroke-width:2px
+    style D fill:#e8f4f8,stroke:#333
+</pre>
+      </div>
+    </section>
+
+    <nav class="page-nav"></nav>
+  </main>
+</div>
+
+<script src="../js/nav.js?v=2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad:true, theme:'neutral', flowchart:{useMaxWidth:true}});</script>
+</body>
+</html>

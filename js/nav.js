@@ -38,6 +38,26 @@ const courses = {
       { id: '11', title: '멀티 에이전트', file: '11-multi-agent.html', level: 'advanced' },
       { id: '12', title: 'MCP 연동', file: '12-mcp-integration.html', level: 'advanced' },
     ]
+  },
+  rag: {
+    name: 'RAG',
+    color: 'rag',
+    basePath: 'rag',
+    chapters: [
+      { id: '01', title: 'RAG란 무엇인가', file: '01-what-is-rag.html', level: 'basic' },
+      { id: '02', title: '환경 설정', file: '02-environment-setup.html', level: 'basic' },
+      { id: '03', title: '문서 로딩과 전처리', file: '03-document-loading.html', level: 'basic' },
+      { id: '04', title: '청킹 전략', file: '04-chunking.html', level: 'basic' },
+      { id: '05', title: '임베딩 모델', file: '05-embedding.html', level: 'basic' },
+      { id: '06', title: '벡터 스토어', file: '06-vector-store.html', level: 'basic' },
+      { id: '07', title: '검색과 생성', file: '07-retrieval-generation.html', level: 'basic' },
+      { id: '08', title: '첫 번째 RAG 파이프라인', file: '08-first-rag-pipeline.html', level: 'basic' },
+      { id: '09', title: '검색 품질 최적화', file: '09-search-optimization.html', level: 'advanced' },
+      { id: '10', title: '고급 RAG 패턴', file: '10-advanced-rag-patterns.html', level: 'advanced' },
+      { id: '11', title: 'RAG 평가', file: '11-rag-evaluation.html', level: 'advanced' },
+      { id: '12', title: 'Kubernetes 배포', file: '12-kubernetes-deployment.html', level: 'advanced' },
+      { id: '13', title: '프로덕션 운영', file: '13-production-operations.html', level: 'advanced' },
+    ]
   }
 };
 
@@ -105,8 +125,8 @@ function buildSidebar() {
   const course = courses[activeCourse];
   const { chapterIndex: currentIdx } = detectCurrentPage();
   const prefix = currentCourse ? '' : course.basePath + '/';
-  const isLG = activeCourse === 'langgraph';
-  const linkClass = isLG ? ' sidebar__link--langgraph' : '';
+  const isMCP = activeCourse === 'mcp';
+  const linkClass = isMCP ? '' : ` sidebar__link--${course.color}`;
 
   // Basic section
   html += `<div class="sidebar__section-title">기본 과정</div>`;
@@ -114,7 +134,7 @@ function buildSidebar() {
     const idx = course.chapters.indexOf(ch);
     let active = '';
     if (idx === currentIdx && currentCourse === activeCourse) {
-      active = isLG ? ' sidebar__link--active-langgraph' : ' sidebar__link--active';
+      active = isMCP ? ' sidebar__link--active' : ` sidebar__link--active-${course.color}`;
     }
     html += `<a href="${prefix}${ch.file}" class="sidebar__link${linkClass}${active}">${ch.id}. ${ch.title}</a>`;
   });
@@ -122,13 +142,13 @@ function buildSidebar() {
   html += '<hr class="sidebar__divider">';
 
   // Advanced section
-  const advClass = isLG ? ' sidebar__section-title--langgraph-advanced' : ' sidebar__section-title--advanced';
+  const advClass = isMCP ? ' sidebar__section-title--advanced' : ` sidebar__section-title--${course.color}-advanced`;
   html += `<div class="sidebar__section-title${advClass}">심화 과정</div>`;
   course.chapters.filter(ch => ch.level === 'advanced').forEach(ch => {
     const idx = course.chapters.indexOf(ch);
     let active = '';
     if (idx === currentIdx && currentCourse === activeCourse) {
-      active = isLG ? ' sidebar__link--active-langgraph' : ' sidebar__link--active';
+      active = isMCP ? ' sidebar__link--active' : ` sidebar__link--active-${course.color}`;
     }
     html += `<a href="${prefix}${ch.file}" class="sidebar__link${linkClass}${active}">${ch.id}. ${ch.title}</a>`;
   });
@@ -157,14 +177,14 @@ function buildPageNav() {
 
   const course = courses[courseId];
   const chapters = course.chapters;
-  const isLG = courseId === 'langgraph';
-  const lgClass = isLG ? ' page-nav__link--langgraph' : '';
+  const isMCP = courseId === 'mcp';
+  const navClass = isMCP ? '' : ` page-nav__link--${course.color}`;
 
   let html = '';
 
   if (currentIdx > 0) {
     const prev = chapters[currentIdx - 1];
-    html += `<a href="${prev.file}" class="page-nav__link page-nav__link--prev${lgClass}">
+    html += `<a href="${prev.file}" class="page-nav__link page-nav__link--prev${navClass}">
       <span class="page-nav__label">← 이전</span>
       <span class="page-nav__title">${prev.id}. ${prev.title}</span>
     </a>`;
@@ -172,7 +192,7 @@ function buildPageNav() {
 
   if (currentIdx < chapters.length - 1) {
     const next = chapters[currentIdx + 1];
-    html += `<a href="${next.file}" class="page-nav__link page-nav__link--next${lgClass}">
+    html += `<a href="${next.file}" class="page-nav__link page-nav__link--next${navClass}">
       <span class="page-nav__label">다음 →</span>
       <span class="page-nav__title">${next.id}. ${next.title}</span>
     </a>`;

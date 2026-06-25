@@ -179,6 +179,25 @@ body {
   background: #f0fdf4;
 }
 
+/* RAG active colors */
+.sidebar__link--active-rag {
+  color: #d97706;
+  font-weight: 600;
+  border-left-color: #d97706;
+  background: #fffbeb;
+}
+
+.sidebar__link--rag:hover {
+  color: #d97706;
+  background: #fefce8;
+}
+
+.sidebar__course-tab--active-rag {
+  background: #ffffff;
+  color: #d97706;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
 .sidebar__divider {
   margin: 12px 20px;
   border: none;
@@ -269,6 +288,17 @@ body {
 .chapter-badge--lg-advanced {
   background: #faf5ff;
   color: #7c3aed;
+}
+
+/* RAG badges */
+.chapter-badge--rag-basic {
+  background: #fffbeb;
+  color: #d97706;
+}
+
+.chapter-badge--rag-advanced {
+  background: #fff7ed;
+  color: #c2410c;
 }
 
 /* ===== Chapter Subtitle ===== */
@@ -489,6 +519,20 @@ code[class*="language-"] {
   color: #059669;
 }
 
+/* RAG page nav */
+.page-nav__link--rag:hover {
+  border-color: #d97706;
+  background: #fffbf0;
+}
+
+.page-nav__link--rag .page-nav__title {
+  color: #d97706;
+}
+
+.sidebar__section-title--rag-advanced {
+  color: #c2410c;
+}
+
 /* ===== Home Page ===== */
 .home-hero {
   text-align: center;
@@ -510,9 +554,9 @@ code[class*="language-"] {
 /* Course Cards */
 .home-courses {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 1fr 1fr;
   gap: 24px;
-  max-width: 800px;
+  max-width: 1000px;
   margin: 0 auto 48px;
 }
 
@@ -546,6 +590,16 @@ code[class*="language-"] {
 .course-card--langgraph:hover {
   border-color: #059669;
 }
+
+.course-card--rag {
+  border-color: #fde68a;
+}
+
+.course-card--rag:hover {
+  border-color: #d97706;
+}
+
+.course-card--rag .course-card__title { color: #d97706; }
 
 .course-card__icon {
   font-size: 32px;
@@ -619,6 +673,10 @@ code[class*="language-"] {
 
 .chapter-card--langgraph:hover {
   background: #f0fdf8;
+}
+
+.chapter-card--rag:hover {
+  background: #fffbf0;
 }
 
 .chapter-card__number {

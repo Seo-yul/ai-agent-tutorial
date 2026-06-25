@@ -1,0 +1,782 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>환경 설정 - RAG 튜토리얼</title>
+  <link rel="stylesheet" href="../css/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.css">
+</head>
+<body>
+
+<header class="site-header">
+  <button class="hamburger" aria-label="메뉴">
+    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+  </button>
+  <a href="../index.html" class="site-header__title"><span>RAG</span> 튜토리얼</a>
+</header>
+
+<div class="layout">
+  <nav class="sidebar"></nav>
+  <main class="main">
+    <span class="chapter-badge chapter-badge--rag-basic">기본 과정</span>
+    <h1>환경 설정</h1>
+    <p class="chapter-subtitle">RAG 개발을 위한 Python 환경, 패키지, 벡터 DB를 구성한다</p>
+
+    <!-- 1. 필수 도구 -->
+    <section>
+      <h2>필수 도구</h2>
+      <p>RAG 시스템을 구축하기 위해 다음 도구들이 필요하다.</p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>도구</th>
+            <th>최소 버전</th>
+            <th>역할</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Python</strong></td>
+            <td>3.11+</td>
+            <td>핵심 프로그래밍 언어</td>
+          </tr>
+          <tr>
+            <td><strong>uv</strong></td>
+            <td>0.4+</td>
+            <td>패키지 관리 및 프로젝트 관리</td>
+          </tr>
+          <tr>
+            <td><strong>Docker</strong></td>
+            <td>24+</td>
+            <td>벡터 DB 등 로컬 인프라 실행</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Python 설치 확인</h3>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-bash">python3 --version
+# 출력 예시: Python 3.12.4</code></pre>
+      </div>
+
+      <p>Python 3.11 미만이 설치되어 있다면 <a href="https://www.python.org/downloads/" target="_blank">python.org</a>에서 최신 버전을 설치하거나, 아래 uv를 통해 Python을 관리할 수 있다.</p>
+
+      <h3>uv 설치</h3>
+      <p>
+        <strong>uv</strong>는 Rust로 작성된 고속 Python 패키지 매니저이자 프로젝트 관리 도구이다.
+        pip보다 10~100배 빠르며, 가상 환경을 자동으로 관리해준다.
+      </p>
+
+      <p><strong>macOS / Linux:</strong></p>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-bash">curl -LsSf https://astral.sh/uv/install.sh | sh</code></pre>
+      </div>
+
+      <p><strong>Windows (PowerShell):</strong></p>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-bash">powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"</code></pre>
+      </div>
+
+      <p>설치 후 버전을 확인한다.</p>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-bash">uv --version
+# 출력 예시: uv 0.7.x</code></pre>
+      </div>
+
+      <h3>Docker 설치 확인</h3>
+      <p>벡터 데이터베이스를 로컬에서 실행하기 위해 Docker가 필요하다.</p>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-bash">docker --version
+# 출력 예시: Docker version 27.x.x
+
+# Docker 데몬이 실행 중인지 확인
+docker ps
+# 에러 없이 컨테이너 목록(비어있어도 됨)이 출력되면 정상</code></pre>
+      </div>
+
+      <p>Docker가 없다면 <a href="https://docs.docker.com/get-docker/" target="_blank">Docker 공식 사이트</a>에서 Docker Desktop을 설치한다.</p>
+
+      <div class="info-box info-box--tip">
+        <div class="info-box__title">TIP</div>
+        <p>
+          macOS 사용자는 <code>brew install --cask docker</code>로도 Docker Desktop을 설치할 수 있다.
+          Linux 사용자는 Docker Engine만 설치해도 충분하다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 2. 프로젝트 생성 -->
+    <section>
+      <h2>프로젝트 생성</h2>
+      <p>uv를 사용하여 RAG 프로젝트를 초기화한다.</p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-bash"># 새 프로젝트 생성
+uv init rag-tutorial
+
+# 프로젝트 디렉토리로 이동
+cd rag-tutorial</code></pre>
+      </div>
+
+      <p>
+        <code>uv init</code>을 실행하면 <code>pyproject.toml</code>, <code>.python-version</code>, <code>hello.py</code> 등의 파일이 자동으로 생성된다.
+        uv는 <code>uv add</code> 명령어를 실행할 때 가상 환경(<code>.venv</code>)을 자동으로 생성하고 관리한다.
+      </p>
+
+      <div class="info-box info-box--info">
+        <div class="info-box__title">INFO</div>
+        <p>
+          uv를 사용하면 <code>python -m venv</code>, <code>pip install</code>, <code>pip freeze</code> 등을 직접 관리할 필요가 없다.
+          <code>uv add</code>로 패키지를 추가하면 의존성 해결, 가상 환경 관리, lock 파일 생성이 모두 자동으로 처리된다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 3. 핵심 패키지 설치 -->
+    <section>
+      <h2>핵심 패키지 설치</h2>
+      <p>RAG 파이프라인 구축에 필요한 패키지들을 설치한다. 역할별로 나누어 살펴보자.</p>
+
+      <h3>LangChain 핵심 패키지</h3>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-bash"># LangChain 프레임워크 및 LLM 통합
+uv add langchain langchain-community langchain-openai langchain-anthropic</code></pre>
+      </div>
+
+      <h3>벡터 스토어 연동</h3>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-bash"># 벡터 DB 클라이언트
+uv add langchain-qdrant langchain-postgres
+uv add qdrant-client psycopg[binary] pgvector</code></pre>
+      </div>
+
+      <h3>문서 처리</h3>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-bash"># PDF 파싱 및 문서 전처리
+uv add pypdf unstructured[pdf]</code></pre>
+      </div>
+
+      <h3>평가 프레임워크</h3>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-bash"># RAG 성능 평가
+uv add ragas</code></pre>
+      </div>
+
+      <h3>패키지 역할 정리</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>패키지</th>
+            <th>역할</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>langchain</code></td>
+            <td>RAG 파이프라인 구축을 위한 핵심 프레임워크. 체인, 프롬프트, 출력 파서 등을 제공한다.</td>
+          </tr>
+          <tr>
+            <td><code>langchain-community</code></td>
+            <td>커뮤니티가 기여한 통합 모듈. 다양한 문서 로더, 벡터 스토어 등을 포함한다.</td>
+          </tr>
+          <tr>
+            <td><code>langchain-openai</code></td>
+            <td>OpenAI API 통합. ChatGPT와 임베딩 모델(text-embedding-3-small 등)을 사용할 수 있다.</td>
+          </tr>
+          <tr>
+            <td><code>langchain-anthropic</code></td>
+            <td>Anthropic Claude API 통합. Claude 모델을 LLM으로 사용할 수 있다.</td>
+          </tr>
+          <tr>
+            <td><code>langchain-qdrant</code></td>
+            <td>Qdrant 벡터 DB와의 LangChain 통합.</td>
+          </tr>
+          <tr>
+            <td><code>langchain-postgres</code></td>
+            <td>PostgreSQL(pgvector)과의 LangChain 통합.</td>
+          </tr>
+          <tr>
+            <td><code>qdrant-client</code></td>
+            <td>Qdrant 벡터 DB Python 클라이언트.</td>
+          </tr>
+          <tr>
+            <td><code>psycopg[binary]</code></td>
+            <td>PostgreSQL Python 드라이버 (psycopg3).</td>
+          </tr>
+          <tr>
+            <td><code>pgvector</code></td>
+            <td>pgvector 확장과 상호작용하기 위한 Python 라이브러리.</td>
+          </tr>
+          <tr>
+            <td><code>pypdf</code></td>
+            <td>PDF 파일에서 텍스트를 추출하는 순수 Python 라이브러리.</td>
+          </tr>
+          <tr>
+            <td><code>unstructured[pdf]</code></td>
+            <td>복잡한 레이아웃의 PDF도 처리할 수 있는 고급 문서 파서.</td>
+          </tr>
+          <tr>
+            <td><code>ragas</code></td>
+            <td>RAG 성능 평가 프레임워크. Faithfulness, Answer Relevancy 등의 메트릭을 제공한다.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box info-box--warning">
+        <div class="info-box__title">WARNING</div>
+        <p>
+          <code>unstructured[pdf]</code>는 시스템 레벨 의존성(poppler, tesseract 등)이 필요할 수 있다.
+          macOS에서는 <code>brew install poppler tesseract</code>, Ubuntu에서는
+          <code>sudo apt install poppler-utils tesseract-ocr</code>로 설치한다.
+          간단한 PDF만 다룬다면 <code>pypdf</code>만으로도 충분하다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 4. API 키 설정 -->
+    <section>
+      <h2>API 키 설정</h2>
+      <p>
+        LLM과 임베딩 모델을 사용하려면 API 키가 필요하다.
+        OpenAI와 Anthropic 중 하나만 있어도 진행할 수 있지만,
+        두 가지 모두 준비하면 모델을 비교해볼 수 있다.
+      </p>
+
+      <h3>API 키 발급</h3>
+      <ul>
+        <li><strong>OpenAI:</strong> <a href="https://platform.openai.com/api-keys" target="_blank">platform.openai.com/api-keys</a>에서 발급한다.</li>
+        <li><strong>Anthropic:</strong> <a href="https://console.anthropic.com/settings/keys" target="_blank">console.anthropic.com/settings/keys</a>에서 발급한다.</li>
+      </ul>
+
+      <h3>환경 변수로 설정</h3>
+      <p>터미널에서 직접 환경 변수를 설정할 수 있다.</p>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-bash"># OpenAI API 키
+export OPENAI_API_KEY="sk-..."
+
+# Anthropic API 키
+export ANTHROPIC_API_KEY="sk-ant-..."</code></pre>
+      </div>
+
+      <h3>.env 파일 사용 (권장)</h3>
+      <p>
+        매번 환경 변수를 설정하는 것은 번거롭다.
+        프로젝트 루트에 <code>.env</code> 파일을 만들어 API 키를 관리하는 것이 편리하다.
+      </p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">BASH</span>
+        <pre class="line-numbers"><code class="language-bash"># .env 파일 생성
+cat &lt;&lt; 'EOF' &gt; .env
+OPENAI_API_KEY=sk-...
+ANTHROPIC_API_KEY=sk-ant-...
+EOF</code></pre>
+      </div>
+
+      <p><code>python-dotenv</code>를 설치하면 Python에서 <code>.env</code> 파일을 자동으로 읽을 수 있다.</p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-bash">uv add python-dotenv</code></pre>
+      </div>
+
+      <p>Python 코드에서 다음과 같이 사용한다.</p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">PYTHON</span>
+        <pre class="line-numbers"><code class="language-python">from dotenv import load_dotenv
+import os
+
+# .env 파일에서 환경 변수 로드
+load_dotenv()
+
+# 환경 변수 사용
+openai_key = os.getenv("OPENAI_API_KEY")
+anthropic_key = os.getenv("ANTHROPIC_API_KEY")</code></pre>
+      </div>
+
+      <div class="info-box info-box--warning">
+        <div class="info-box__title">WARNING</div>
+        <p>
+          <code>.env</code> 파일에는 민감한 API 키가 포함되므로, <strong>반드시 <code>.gitignore</code>에 추가</strong>해야 한다.
+          실수로 GitHub에 API 키를 푸시하면 과금 피해를 입을 수 있다.
+        </p>
+      </div>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">BASH</span>
+        <pre class="line-numbers"><code class="language-bash"># .gitignore에 .env 추가
+echo ".env" &gt;&gt; .gitignore</code></pre>
+      </div>
+    </section>
+
+    <!-- 5. 벡터 스토어 설치 (Docker) -->
+    <section>
+      <h2>벡터 스토어 설치 (Docker)</h2>
+      <p>
+        RAG 시스템에서 벡터 스토어는 임베딩된 문서를 저장하고 유사도 검색을 수행하는 핵심 인프라이다.
+        이 튜토리얼에서는 <strong>pgvector</strong>와 <strong>Qdrant</strong> 두 가지를 다룬다.
+        둘 중 하나만 설치해도 되고, 둘 다 설치하여 비교해볼 수도 있다.
+      </p>
+
+      <h3>옵션 A: pgvector (PostgreSQL + 벡터 확장)</h3>
+      <p>
+        pgvector는 PostgreSQL에 벡터 검색 기능을 추가하는 확장(extension)이다.
+        이미 PostgreSQL을 사용하고 있는 조직이라면, 별도의 벡터 DB를 도입하지 않고
+        기존 인프라에 벡터 검색을 추가할 수 있다는 장점이 있다.
+      </p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">BASH</span>
+        <pre class="line-numbers"><code class="language-bash"># pgvector가 포함된 PostgreSQL 16 컨테이너 실행
+docker run -d --name pgvector \
+  -e POSTGRES_PASSWORD=postgres \
+  -e POSTGRES_DB=rag_tutorial \
+  -p 5432:5432 \
+  pgvector/pgvector:pg16</code></pre>
+      </div>
+
+      <p>컨테이너가 정상적으로 실행되었는지 확인한다.</p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">BASH</span>
+        <pre class="line-numbers"><code class="language-bash"># 컨테이너 상태 확인
+docker ps --filter name=pgvector
+
+# PostgreSQL 접속 테스트
+docker exec -it pgvector psql -U postgres -d rag_tutorial -c "SELECT 1;"</code></pre>
+      </div>
+
+      <p>pgvector 확장을 활성화한다.</p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">BASH</span>
+        <pre class="line-numbers"><code class="language-bash"># pgvector 확장 생성
+docker exec -it pgvector psql -U postgres -d rag_tutorial -c "CREATE EXTENSION IF NOT EXISTS vector;"
+
+# 확장이 정상 설치되었는지 확인
+docker exec -it pgvector psql -U postgres -d rag_tutorial -c "SELECT extname, extversion FROM pg_extension WHERE extname = 'vector';"</code></pre>
+      </div>
+
+      <div class="info-box info-box--info">
+        <div class="info-box__title">INFO</div>
+        <p>
+          pgvector는 <code>vector</code> 타입과 함께 <code>cosine distance</code>, <code>L2 distance</code>,
+          <code>inner product</code> 등의 거리 연산자를 제공한다.
+          HNSW, IVFFlat 인덱스를 지원하여 대규모 데이터에서도 빠른 검색이 가능하다.
+        </p>
+      </div>
+
+      <h3>옵션 B: Qdrant</h3>
+      <p>
+        Qdrant는 벡터 검색에 특화된 전용 데이터베이스이다.
+        Rust로 작성되어 성능이 뛰어나고, REST API와 gRPC를 모두 지원한다.
+        필터링, 페이로드 저장, 멀티테넌시 등 벡터 검색에 특화된 기능이 풍부하다.
+      </p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">BASH</span>
+        <pre class="line-numbers"><code class="language-bash"># Qdrant 컨테이너 실행
+docker run -d --name qdrant \
+  -p 6333:6333 \
+  -p 6334:6334 \
+  -v qdrant_data:/qdrant/storage \
+  qdrant/qdrant</code></pre>
+      </div>
+
+      <p>Qdrant가 정상적으로 실행되었는지 확인한다.</p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">BASH</span>
+        <pre class="line-numbers"><code class="language-bash"># 컨테이너 상태 확인
+docker ps --filter name=qdrant
+
+# Qdrant 헬스체크 (REST API)
+curl -s http://localhost:6333/healthz
+# 출력: OK</code></pre>
+      </div>
+
+      <p>Qdrant는 웹 대시보드도 제공한다. 브라우저에서 <code>http://localhost:6333/dashboard</code>에 접속하면 컬렉션 관리, 데이터 탐색 등을 GUI로 할 수 있다.</p>
+
+      <div class="info-box info-box--tip">
+        <div class="info-box__title">TIP</div>
+        <p>
+          Qdrant는 <code>-v qdrant_data:/qdrant/storage</code> 옵션으로 Docker 볼륨을 마운트했다.
+          이렇게 하면 컨테이너를 삭제해도 데이터가 보존된다.
+          pgvector도 같은 방식으로 <code>-v pgdata:/var/lib/postgresql/data</code>를 추가하면 데이터를 영속화할 수 있다.
+        </p>
+      </div>
+
+      <h3>pgvector vs Qdrant 간략 비교</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>비교 항목</th>
+            <th>pgvector</th>
+            <th>Qdrant</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>유형</strong></td>
+            <td>PostgreSQL 확장</td>
+            <td>전용 벡터 DB</td>
+          </tr>
+          <tr>
+            <td><strong>장점</strong></td>
+            <td>기존 PostgreSQL 인프라 활용, SQL 쿼리와 벡터 검색 결합 가능</td>
+            <td>벡터 검색 최적화, 풍부한 필터링, 웹 대시보드</td>
+          </tr>
+          <tr>
+            <td><strong>적합한 경우</strong></td>
+            <td>이미 PostgreSQL을 사용 중이거나 관계형 데이터와 벡터를 함께 다뤄야 할 때</td>
+            <td>벡터 검색 성능이 최우선이거나 대규모 벡터 데이터를 다룰 때</td>
+          </tr>
+          <tr>
+            <td><strong>포트</strong></td>
+            <td>5432</td>
+            <td>6333 (REST), 6334 (gRPC)</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box info-box--info">
+        <div class="info-box__title">INFO</div>
+        <p>
+          벡터 스토어에 대한 더 자세한 비교와 활용법은 <strong>06장 벡터 스토어</strong>에서 다룬다.
+          지금은 로컬 개발 환경에서 하나를 띄워두기만 하면 충분하다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 6. 설치 검증 -->
+    <section>
+      <h2>설치 검증</h2>
+      <p>모든 설치가 정상적으로 완료되었는지 Python 스크립트로 확인한다.</p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">PYTHON</span>
+        <pre class="line-numbers"><code class="language-python">"""verify_setup.py - RAG 튜토리얼 환경 검증 스크립트"""
+
+import sys
+
+def check_python_version():
+    """Python 버전 확인"""
+    version = sys.version_info
+    assert version.major == 3 and version.minor >= 11, \
+        f"Python 3.11+ 필요 (현재: {version.major}.{version.minor})"
+    print(f"[OK] Python {version.major}.{version.minor}.{version.micro}")
+
+def check_packages():
+    """핵심 패키지 import 확인"""
+    packages = {
+        "langchain": "langchain",
+        "langchain_openai": "langchain-openai",
+        "langchain_anthropic": "langchain-anthropic",
+        "langchain_qdrant": "langchain-qdrant",
+        "langchain_postgres": "langchain-postgres",
+        "pypdf": "pypdf",
+        "ragas": "ragas",
+    }
+
+    for module_name, package_name in packages.items():
+        try:
+            __import__(module_name)
+            print(f"[OK] {package_name}")
+        except ImportError:
+            print(f"[FAIL] {package_name} - 'uv add {package_name}'으로 설치 필요")
+
+def check_api_keys():
+    """API 키 설정 확인"""
+    import os
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+    except ImportError:
+        pass
+
+    openai_key = os.getenv("OPENAI_API_KEY", "")
+    anthropic_key = os.getenv("ANTHROPIC_API_KEY", "")
+
+    if openai_key and openai_key.startswith("sk-"):
+        print("[OK] OPENAI_API_KEY 설정됨")
+    else:
+        print("[WARN] OPENAI_API_KEY 미설정")
+
+    if anthropic_key and anthropic_key.startswith("sk-ant-"):
+        print("[OK] ANTHROPIC_API_KEY 설정됨")
+    else:
+        print("[WARN] ANTHROPIC_API_KEY 미설정")
+
+def check_pgvector():
+    """pgvector 연결 확인"""
+    try:
+        import psycopg
+        conn = psycopg.connect(
+            "postgresql://postgres:postgres@localhost:5432/rag_tutorial"
+        )
+        cur = conn.execute("SELECT 1")
+        cur.fetchone()
+        conn.close()
+        print("[OK] pgvector 연결 성공")
+    except Exception as e:
+        print(f"[SKIP] pgvector 연결 실패 - {e}")
+
+def check_qdrant():
+    """Qdrant 연결 확인"""
+    try:
+        from qdrant_client import QdrantClient
+        client = QdrantClient(host="localhost", port=6333)
+        client.get_collections()
+        print("[OK] Qdrant 연결 성공")
+    except Exception as e:
+        print(f"[SKIP] Qdrant 연결 실패 - {e}")
+
+def check_llm_connection():
+    """LLM API 연결 확인"""
+    import os
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+    except ImportError:
+        pass
+
+    # OpenAI 테스트
+    if os.getenv("OPENAI_API_KEY"):
+        try:
+            from langchain_openai import ChatOpenAI
+            llm = ChatOpenAI(model="gpt-4o-mini", max_tokens=10)
+            response = llm.invoke("Hello")
+            print(f"[OK] OpenAI API 연결 성공")
+        except Exception as e:
+            print(f"[FAIL] OpenAI API 연결 실패 - {e}")
+
+    # Anthropic 테스트
+    if os.getenv("ANTHROPIC_API_KEY"):
+        try:
+            from langchain_anthropic import ChatAnthropic
+            llm = ChatAnthropic(model="claude-sonnet-4-20250514", max_tokens=10)
+            response = llm.invoke("Hello")
+            print(f"[OK] Anthropic API 연결 성공")
+        except Exception as e:
+            print(f"[FAIL] Anthropic API 연결 실패 - {e}")
+
+if __name__ == "__main__":
+    print("=" * 50)
+    print("RAG 튜토리얼 환경 검증")
+    print("=" * 50)
+
+    print("\n--- Python 버전 ---")
+    check_python_version()
+
+    print("\n--- 패키지 설치 ---")
+    check_packages()
+
+    print("\n--- API 키 ---")
+    check_api_keys()
+
+    print("\n--- 벡터 DB ---")
+    check_pgvector()
+    check_qdrant()
+
+    print("\n--- LLM 연결 ---")
+    check_llm_connection()
+
+    print("\n" + "=" * 50)
+    print("검증 완료!")
+    print("=" * 50)</code></pre>
+      </div>
+
+      <p>스크립트를 실행한다.</p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-bash">uv run python verify_setup.py</code></pre>
+      </div>
+
+      <p>정상적으로 설정되었다면 다음과 비슷한 출력을 볼 수 있다.</p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-bash">==================================================
+RAG 튜토리얼 환경 검증
+==================================================
+
+--- Python 버전 ---
+[OK] Python 3.12.4
+
+--- 패키지 설치 ---
+[OK] langchain
+[OK] langchain-openai
+[OK] langchain-anthropic
+[OK] langchain-qdrant
+[OK] langchain-postgres
+[OK] pypdf
+[OK] ragas
+
+--- API 키 ---
+[OK] OPENAI_API_KEY 설정됨
+[OK] ANTHROPIC_API_KEY 설정됨
+
+--- 벡터 DB ---
+[OK] pgvector 연결 성공
+[OK] Qdrant 연결 성공
+
+--- LLM 연결 ---
+[OK] OpenAI API 연결 성공
+[OK] Anthropic API 연결 성공
+
+==================================================
+검증 완료!
+==================================================</code></pre>
+      </div>
+
+      <div class="info-box info-box--tip">
+        <div class="info-box__title">TIP</div>
+        <p>
+          벡터 DB 항목이 <code>[SKIP]</code>으로 표시되더라도 걱정할 필요 없다.
+          Docker 컨테이너를 아직 실행하지 않았을 수 있으며,
+          실제로 벡터 스토어를 사용하는 챕터에서 다시 연결하면 된다.
+          API 키와 패키지 설치만 <code>[OK]</code>이면 다음 챕터로 진행할 수 있다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 7. 프로젝트 구조 -->
+    <section>
+      <h2>프로젝트 구조</h2>
+      <p>
+        앞으로의 챕터에서 점진적으로 파일을 추가해나갈 것이다.
+        최종적으로 완성될 프로젝트의 디렉토리 구조는 다음과 같다.
+      </p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <pre class="line-numbers"><code class="language-bash">rag-tutorial/
+├── data/               # PDF 등 원본 문서
+│   └── sample.pdf
+├── src/
+│   ├── __init__.py
+│   ├── loader.py       # 문서 로딩 (03장)
+│   ├── chunker.py      # 청킹 전략 (04장)
+│   ├── embedder.py     # 임베딩 (05장)
+│   ├── store.py        # 벡터 저장 (06장)
+│   ├── retriever.py    # 검색 (07장)
+│   └── chain.py        # RAG 체인 (07~08장)
+├── tests/
+│   └── test_pipeline.py
+├── .env                # API 키 (gitignore 대상)
+├── .gitignore
+├── pyproject.toml      # 프로젝트 설정 및 의존성
+├── uv.lock             # 의존성 lock 파일
+└── verify_setup.py     # 환경 검증 스크립트</code></pre>
+      </div>
+
+      <p>각 파일의 역할을 정리하면 다음과 같다.</p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>파일/디렉토리</th>
+            <th>역할</th>
+            <th>관련 챕터</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>data/</code></td>
+            <td>RAG에 사용할 원본 문서(PDF 등)를 저장하는 디렉토리</td>
+            <td>03장</td>
+          </tr>
+          <tr>
+            <td><code>src/loader.py</code></td>
+            <td>PDF, HTML 등 다양한 형식의 문서를 LangChain Document 객체로 변환</td>
+            <td>03장</td>
+          </tr>
+          <tr>
+            <td><code>src/chunker.py</code></td>
+            <td>문서를 의미 있는 청크로 분할하는 다양한 전략 구현</td>
+            <td>04장</td>
+          </tr>
+          <tr>
+            <td><code>src/embedder.py</code></td>
+            <td>텍스트 청크를 벡터로 변환하는 임베딩 모델 래퍼</td>
+            <td>05장</td>
+          </tr>
+          <tr>
+            <td><code>src/store.py</code></td>
+            <td>벡터를 저장하고 유사도 검색을 수행하는 벡터 스토어 관리</td>
+            <td>06장</td>
+          </tr>
+          <tr>
+            <td><code>src/retriever.py</code></td>
+            <td>질문에 관련된 문서를 검색하는 Retriever 구현</td>
+            <td>07장</td>
+          </tr>
+          <tr>
+            <td><code>src/chain.py</code></td>
+            <td>검색과 생성을 결합한 RAG 체인 구성</td>
+            <td>07~08장</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <p>지금 당장 모든 디렉토리를 만들 필요는 없다. 각 챕터를 진행하면서 필요한 파일을 하나씩 추가해나갈 것이다. 지금은 기본 구조만 만들어두자.</p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">BASH</span>
+        <pre class="line-numbers"><code class="language-bash"># 기본 디렉토리 구조 생성
+mkdir -p data src tests
+
+# src 패키지 초기화
+touch src/__init__.py</code></pre>
+      </div>
+    </section>
+
+    <!-- 8. 다음 단계 -->
+    <section>
+      <h2>다음 단계</h2>
+      <p>
+        개발 환경이 준비되었다.
+        다음 챕터에서는 RAG의 첫 번째 단계인 <strong>문서 로딩과 전처리</strong>를 다룬다.
+        PDF 파일에서 텍스트를 추출하고, LangChain의 Document 객체로 변환하는 방법을 배울 것이다.
+      </p>
+    </section>
+
+    <nav class="page-nav"></nav>
+  </main>
+</div>
+
+<script src="../js/nav.js?v=2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad:true, theme:'neutral', flowchart:{useMaxWidth:true}});</script>
+</body>
+</html>

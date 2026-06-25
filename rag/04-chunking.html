@@ -1,0 +1,986 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>청킹 전략 - RAG 튜토리얼</title>
+  <link rel="stylesheet" href="../css/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.css">
+</head>
+<body>
+
+<header class="site-header">
+  <button class="hamburger" aria-label="메뉴">
+    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+  </button>
+  <a href="../index.html" class="site-header__title"><span>RAG</span> 튜토리얼</a>
+</header>
+
+<div class="layout">
+  <nav class="sidebar"></nav>
+  <main class="main">
+    <span class="chapter-badge chapter-badge--rag-basic">기본 과정</span>
+    <h1>청킹 전략</h1>
+    <p class="chapter-subtitle">문서를 적절한 크기로 분할하는 것이 RAG 검색 품질의 핵심이다</p>
+
+    <!-- 1. 왜 청킹이 필요한가? -->
+    <section>
+      <h2>왜 청킹이 필요한가?</h2>
+      <p>
+        이전 장에서 문서를 로딩하여 <code>Document</code> 객체로 변환하는 방법을 배웠다.
+        하지만 로딩된 문서를 그대로 RAG 파이프라인에 넣을 수는 없다.
+        <strong>청킹(Chunking)</strong> — 문서를 작은 조각으로 분할하는 과정 — 이 반드시 필요하다.
+        그 이유는 여러 가지이다.
+      </p>
+
+      <h3>이유 1: 임베딩 모델의 토큰 제한</h3>
+      <p>
+        임베딩 모델은 텍스트를 벡터로 변환하는데, 처리할 수 있는 최대 토큰 수가 정해져 있다.
+        OpenAI의 <code>text-embedding-3-small</code>은 8,191 토큰,
+        일반적인 오픈소스 모델은 512 토큰이 한계이다.
+        100페이지짜리 보고서를 하나의 벡터로 만들 수 없다.
+        모델의 최대 토큰을 초과하면 텍스트가 잘리거나 에러가 발생한다.
+      </p>
+
+      <h3>이유 2: 검색 정밀도</h3>
+      <p>
+        이것이 가장 중요한 이유이다. 사용자가 "2024년 3분기 매출 실적이 어떤가?"라고 질문했을 때,
+        100페이지 전체를 LLM에게 전달하는 것과 관련 단락 3개만 전달하는 것 중 어느 쪽이 더 정확한 답변을 생성하겠는가?
+        당연히 <strong>관련 부분만 정확하게 전달</strong>하는 것이 낫다.
+      </p>
+
+      <h3>이유 3: LLM 컨텍스트 윈도우 제한</h3>
+      <p>
+        LLM의 컨텍스트 윈도우는 유한하다. Claude는 200K 토큰, GPT-4는 128K 토큰이 한계이다.
+        방대한 문서 전체를 넣으면 컨텍스트를 초과하거나, 넣더라도 LLM이 중요한 정보를 놓치는
+        "Lost in the Middle" 문제가 발생한다.
+      </p>
+
+      <h3>이유 4: 비용</h3>
+      <p>
+        LLM API는 토큰 수에 비례하여 과금된다. 불필요한 텍스트까지 전달하면 비용이 불필요하게 증가한다.
+        필요한 청크만 선별하여 전달하면 비용을 최적화할 수 있다.
+      </p>
+
+      <div class="info-box info-box--tip">
+        <div class="info-box__title">TIP</div>
+        <p>
+          청킹을 비유하면 이렇다.
+          도서관에서 누군가 "한국 전쟁의 원인"을 물었을 때,
+          한국사 교과서 전체를 건네주는 것보다
+          <strong>관련 페이지만 복사해서 건네주는 것</strong>이 훨씬 효율적이다.
+          청킹은 바로 이 "관련 페이지를 복사하는" 작업이다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 2. 청킹 파라미터 -->
+    <section>
+      <h2>청킹의 핵심 파라미터</h2>
+      <p>
+        모든 텍스트 분할기에는 두 가지 핵심 파라미터가 있다.
+        이 두 값의 설정이 청킹 결과를 결정한다.
+      </p>
+
+      <h3>chunk_size — 청크의 최대 크기</h3>
+      <p>
+        하나의 청크가 가질 수 있는 최대 문자(또는 토큰) 수이다.
+        이 값이 작을수록 검색 정밀도가 높아지지만, 문맥이 손실될 수 있다.
+        클수록 문맥이 보존되지만, 불필요한 정보가 함께 포함될 수 있다.
+      </p>
+
+      <h3>chunk_overlap — 청크 간 겹침</h3>
+      <p>
+        인접한 청크 사이에서 겹치는 문자 수이다.
+        overlap이 0이면 청크 경계에서 문맥이 완전히 단절된다.
+        적절한 overlap을 설정하면, 청크 경계에 걸쳐 있는 정보가
+        양쪽 청크 모두에 포함되어 문맥 단절을 방지할 수 있다.
+      </p>
+
+      <div class="mermaid-wrapper">
+<pre class="mermaid">
+graph TD
+    subgraph "chunk_size=100, chunk_overlap=20"
+        A["청크 1: 문자 0~99\n(100자)"]
+        B["청크 2: 문자 80~179\n(100자)"]
+        C["청크 3: 문자 160~259\n(100자)"]
+    end
+    A -->|"20자 겹침"| B
+    B -->|"20자 겹침"| C
+</pre>
+      </div>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">PYTHON</span>
+        <pre class="line-numbers"><code class="language-python">from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+# chunk_size=100, chunk_overlap=20 예시
+text = "가" * 250  # 250자 텍스트
+
+splitter = RecursiveCharacterTextSplitter(
+    chunk_size=100,
+    chunk_overlap=20,
+)
+chunks = splitter.split_text(text)
+
+for i, chunk in enumerate(chunks):
+    print(f"청크 {i+1}: {len(chunk)}자")
+# 청크 1: 100자
+# 청크 2: 100자
+# 청크 3: 70자  ← 마지막 청크는 남은 텍스트</code></pre>
+      </div>
+
+      <h3>chunk_size별 특성 비교</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>chunk_size</th>
+            <th>검색 정밀도</th>
+            <th>문맥 보존</th>
+            <th>청크 수</th>
+            <th>적합한 상황</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>256</strong></td>
+            <td>매우 높음</td>
+            <td>낮음</td>
+            <td>매우 많음</td>
+            <td>FAQ, 짧은 Q&A, 사전식 문서</td>
+          </tr>
+          <tr>
+            <td><strong>512</strong></td>
+            <td>높음</td>
+            <td>보통</td>
+            <td>많음</td>
+            <td>일반 문서, 블로그, 뉴스 기사</td>
+          </tr>
+          <tr>
+            <td><strong>1024</strong></td>
+            <td>보통</td>
+            <td>높음</td>
+            <td>보통</td>
+            <td>기술 문서, 매뉴얼, 보고서</td>
+          </tr>
+          <tr>
+            <td><strong>2048</strong></td>
+            <td>낮음</td>
+            <td>매우 높음</td>
+            <td>적음</td>
+            <td>법률 문서, 학술 논문, 긴 맥락 필요</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box info-box--info">
+        <div class="info-box__title">INFO</div>
+        <p>
+          <strong>overlap은 chunk_size의 10~20%</strong>가 일반적인 권장값이다.
+          chunk_size=1000이면 overlap=100~200이 적당하다.
+          overlap이 너무 크면 중복 데이터가 늘어나 저장 공간과 비용이 증가하고,
+          너무 작으면 청크 경계에서 정보가 손실된다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 3. 청킹 전략 비교 -->
+    <section>
+      <h2>청킹 전략 비교</h2>
+      <p>
+        LangChain은 다양한 텍스트 분할기를 제공한다.
+        각각의 원리, 장단점, 적합한 상황이 다르다.
+        하나씩 깊이 살펴보자.
+      </p>
+
+      <h3>1) CharacterTextSplitter — 단순 문자 수 기준</h3>
+      <p>
+        가장 단순한 분할기이다. 지정된 <code>separator</code>를 기준으로 텍스트를 나누고,
+        <code>chunk_size</code>에 맞게 합친다.
+        기본 separator는 <code>"\n\n"</code>(빈 줄)이다.
+      </p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">PYTHON</span>
+        <pre class="line-numbers"><code class="language-python">from langchain_text_splitters import CharacterTextSplitter
+
+text = """인공지능의 역사는 1950년대로 거슬러 올라간다.
+앨런 튜링이 "기계가 생각할 수 있는가?"라는 질문을 던졌고,
+이것이 AI 연구의 출발점이 되었다.
+
+1956년 다트머스 회의에서 "인공지능"이라는 용어가 처음 사용되었다.
+이 회의에 참석한 연구자들은 "사고하는 기계"를 만들 수 있다고 낙관했다.
+
+하지만 1970년대에 첫 번째 AI 겨울이 찾아왔다.
+기대에 비해 성과가 미미했고, 연구 자금이 크게 줄어들었다."""
+
+splitter = CharacterTextSplitter(
+    separator="\n\n",    # 빈 줄 기준 분할
+    chunk_size=150,
+    chunk_overlap=0,
+)
+chunks = splitter.split_text(text)
+
+for i, chunk in enumerate(chunks):
+    print(f"--- 청크 {i+1} ({len(chunk)}자) ---")
+    print(chunk)
+    print()</code></pre>
+      </div>
+
+      <div class="info-box info-box--warning">
+        <div class="info-box__title">WARNING</div>
+        <p>
+          <code>CharacterTextSplitter</code>는 separator로 분할한 조각이 <code>chunk_size</code>보다
+          큰 경우 <strong>그대로 반환</strong>한다(강제 분할하지 않는다).
+          이로 인해 예상보다 큰 청크가 생길 수 있다.
+          정밀한 크기 제어가 필요하면 <code>RecursiveCharacterTextSplitter</code>를 사용해야 한다.
+        </p>
+      </div>
+
+      <h3>2) RecursiveCharacterTextSplitter — 가장 많이 사용되는 분할기</h3>
+      <p>
+        이것이 실무에서 <strong>가장 널리 사용되는 분할기</strong>이다.
+        <code>CharacterTextSplitter</code>와 달리, 여러 단계의 구분자를 <strong>계층적으로</strong> 시도한다.
+        먼저 큰 단위(단락)로 나누고, 그래도 크면 더 작은 단위(문장, 단어)로 나눈다.
+        이 계층적 접근 덕분에 의미 단위를 최대한 보존하면서도 크기 제한을 준수한다.
+      </p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">PYTHON</span>
+        <pre class="line-numbers"><code class="language-python">from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+# 기본 구분자 계층: ["\n\n", "\n", " ", ""]
+# 1단계: "\n\n" (빈 줄 = 단락 경계)로 나눈다
+# 2단계: 그래도 크면 "\n" (줄바꿈 = 문장 경계)으로 나눈다
+# 3단계: 그래도 크면 " " (공백 = 단어 경계)으로 나눈다
+# 4단계: 그래도 크면 "" (글자 단위)으로 나눈다
+
+splitter = RecursiveCharacterTextSplitter(
+    chunk_size=200,
+    chunk_overlap=30,
+    separators=["\n\n", "\n", " ", ""],  # 기본값
+)
+
+text = """제1장 인공지능 개요
+
+인공지능(AI)은 인간의 학습 능력, 추론 능력, 지각 능력을 인공적으로 구현하는 컴퓨터 과학의 한 분야이다. 현대 AI는 기계 학습, 특히 딥러닝의 발전으로 급속히 성장하고 있다.
+
+제2장 기계 학습
+
+기계 학습은 명시적으로 프로그래밍하지 않고 데이터로부터 학습하여 성능을 개선하는 알고리즘을 연구하는 분야이다. 지도 학습, 비지도 학습, 강화 학습의 세 가지 주요 패러다임이 있다.
+
+지도 학습은 레이블이 있는 데이터로 학습한다. 분류와 회귀가 대표적이다.
+비지도 학습은 레이블 없는 데이터에서 패턴을 찾는다. 클러스터링이 대표적이다.
+강화 학습은 환경과의 상호작용을 통해 보상을 최대화하는 정책을 학습한다."""
+
+chunks = splitter.split_text(text)
+
+for i, chunk in enumerate(chunks):
+    print(f"--- 청크 {i+1} ({len(chunk)}자) ---")
+    print(chunk)
+    print()</code></pre>
+      </div>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">PYTHON</span>
+        <pre class="line-numbers"><code class="language-python"># Document 객체를 직접 분할할 수도 있다
+from langchain_core.documents import Document
+
+docs = [
+    Document(
+        page_content="긴 텍스트 내용...",
+        metadata={"source": "report.pdf", "page": 0}
+    )
+]
+
+# split_documents는 metadata를 자동으로 유지한다
+split_docs = splitter.split_documents(docs)
+
+for doc in split_docs:
+    print(f"크기: {len(doc.page_content)}자 | metadata: {doc.metadata}")
+    # metadata가 원본 Document에서 그대로 복사된다
+    # {'source': 'report.pdf', 'page': 0}</code></pre>
+      </div>
+
+      <div class="info-box info-box--tip">
+        <div class="info-box__title">TIP</div>
+        <p>
+          <strong><code>RecursiveCharacterTextSplitter</code>를 기본 선택으로 삼아라.</strong>
+          어떤 분할기를 써야 할지 모르겠다면, 이것부터 시작하면 된다.
+          대부분의 문서 타입에서 안정적인 결과를 보여주며,
+          LangChain 공식 문서에서도 "대부분의 사용 사례에 권장"한다고 명시하고 있다.
+        </p>
+      </div>
+
+      <h3>3) TokenTextSplitter — 토큰 기준 분할</h3>
+      <p>
+        <code>RecursiveCharacterTextSplitter</code>가 <strong>문자 수</strong> 기준으로 분할하는 반면,
+        <code>TokenTextSplitter</code>는 <strong>토큰 수</strong> 기준으로 분할한다.
+        임베딩 모델이 처리하는 단위는 문자가 아니라 토큰이므로,
+        토큰 제한에 정확하게 맞출 필요가 있을 때 사용한다.
+      </p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">BASH</span>
+        <pre class="line-numbers"><code class="language-bash"># tiktoken 설치 (OpenAI 토크나이저)
+pip install tiktoken</code></pre>
+      </div>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">PYTHON</span>
+        <pre class="line-numbers"><code class="language-python">from langchain_text_splitters import TokenTextSplitter
+
+# OpenAI 토크나이저 기준으로 분할
+splitter = TokenTextSplitter(
+    chunk_size=100,       # 최대 100 토큰
+    chunk_overlap=20,     # 20 토큰 겹침
+    encoding_name="cl100k_base",  # GPT-4/text-embedding-3 토크나이저
+)
+
+chunks = splitter.split_text(text)
+
+for i, chunk in enumerate(chunks):
+    print(f"청크 {i+1}: {len(chunk)}자")
+    print(chunk[:80], "...")
+    print()</code></pre>
+      </div>
+
+      <div class="info-box info-box--info">
+        <div class="info-box__title">INFO</div>
+        <p>
+          한국어는 영어보다 같은 텍스트를 표현하는 데 더 많은 토큰을 소비한다.
+          영어 단어 "artificial"은 보통 1~2 토큰이지만,
+          한국어 "인공지능"은 3~5 토큰이 될 수 있다.
+          한국어 문서를 다룰 때는 이 점을 고려하여 chunk_size를 넉넉하게 설정해야 한다.
+        </p>
+      </div>
+
+      <h3>4) SemanticChunker — 의미 기반 분할 (Advanced)</h3>
+      <p>
+        앞의 세 가지 분할기는 모두 <strong>형식적 기준</strong>(문자 수, 구분자, 토큰 수)으로 분할한다.
+        <code>SemanticChunker</code>는 근본적으로 다른 접근을 취한다.
+        텍스트를 문장 단위로 나눈 뒤, 인접 문장 간의 <strong>임베딩 유사도</strong>를 계산하여
+        의미가 전환되는 지점을 찾아 그곳에서 분할한다.
+      </p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">PYTHON</span>
+        <pre class="line-numbers"><code class="language-python">from langchain_experimental.text_splitter import SemanticChunker
+from langchain_openai.embeddings import OpenAIEmbeddings
+
+# 임베딩 모델이 필요하다 (유사도 계산에 사용)
+embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+
+# SemanticChunker 생성
+chunker = SemanticChunker(
+    embeddings,
+    breakpoint_threshold_type="percentile",  # 분할 기준
+    breakpoint_threshold_amount=90,           # 상위 10%의 변화 지점에서 분할
+)
+
+chunks = chunker.split_text(text)
+
+for i, chunk in enumerate(chunks):
+    print(f"--- 의미 청크 {i+1} ({len(chunk)}자) ---")
+    print(chunk[:100], "...")
+    print()</code></pre>
+      </div>
+
+      <p>
+        <code>breakpoint_threshold_type</code>은 세 가지 옵션을 제공한다:
+      </p>
+      <ul>
+        <li><strong><code>"percentile"</code></strong>: 임베딩 거리의 백분위를 기준으로 분할. <code>breakpoint_threshold_amount=90</code>이면 상위 10%의 변화 지점에서 분할한다. 가장 일반적인 설정이다.</li>
+        <li><strong><code>"standard_deviation"</code></strong>: 평균에서 표준편차의 N배만큼 벗어난 지점에서 분할. <code>breakpoint_threshold_amount=1.5</code>이면 1.5 표준편차 이상 변화하는 지점에서 분할한다.</li>
+        <li><strong><code>"interquartile"</code></strong>: 사분위 범위를 기준으로 이상치(outlier)인 변화 지점에서 분할한다.</li>
+      </ul>
+
+      <div class="info-box info-box--warning">
+        <div class="info-box__title">WARNING</div>
+        <p>
+          <code>SemanticChunker</code>는 모든 문장의 임베딩을 계산해야 하므로
+          <strong>임베딩 API 호출 비용</strong>이 발생한다.
+          문서 양이 많으면 비용이 상당할 수 있다.
+          또한 청크 크기가 예측 불가능하다 — 의미 단위로 분할하므로
+          아주 짧거나 아주 긴 청크가 생길 수 있다.
+          프로덕션에서 사용하려면 결과를 반드시 검증해야 한다.
+        </p>
+      </div>
+
+      <h3>4가지 청킹 전략 종합 비교</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>전략</th>
+            <th>분할 기준</th>
+            <th>정밀도</th>
+            <th>속도</th>
+            <th>비용</th>
+            <th>권장 상황</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>CharacterTextSplitter</strong></td>
+            <td>단일 구분자</td>
+            <td>낮음</td>
+            <td>빠름</td>
+            <td>없음</td>
+            <td>빠른 프로토타입, 정형화된 문서</td>
+          </tr>
+          <tr>
+            <td><strong>RecursiveCharacterTextSplitter</strong></td>
+            <td>계층적 구분자</td>
+            <td>높음</td>
+            <td>빠름</td>
+            <td>없음</td>
+            <td>대부분의 일반 문서 (기본 선택)</td>
+          </tr>
+          <tr>
+            <td><strong>TokenTextSplitter</strong></td>
+            <td>토큰 수</td>
+            <td>보통</td>
+            <td>보통</td>
+            <td>없음</td>
+            <td>임베딩 모델 토큰 제한에 정확히 맞출 때</td>
+          </tr>
+          <tr>
+            <td><strong>SemanticChunker</strong></td>
+            <td>임베딩 유사도</td>
+            <td>가장 높음</td>
+            <td>느림</td>
+            <td>임베딩 API 비용</td>
+            <td>고품질 필수, 비용 여유 있을 때</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- 4. 청크 크기 최적화 -->
+    <section>
+      <h2>청크 크기 최적화</h2>
+      <p>
+        "chunk_size를 얼마로 설정해야 하는가?" — 이것은 RAG를 구축하는 모든 개발자가
+        반드시 맞닥뜨리는 질문이다.
+        솔직하게 말하면, <strong>정답은 없다</strong>.
+        최적의 chunk_size는 문서의 종류, 질문의 유형, 사용하는 임베딩 모델, 그리고 LLM에 따라 달라진다.
+        하지만 경험적으로 검증된 가이드라인과 최적화 방법론은 존재한다.
+      </p>
+
+      <h3>경험적 가이드라인</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>문서 유형</th>
+            <th>권장 chunk_size</th>
+            <th>권장 overlap</th>
+            <th>이유</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>FAQ / 짧은 Q&A</td>
+            <td>256~512</td>
+            <td>0~50</td>
+            <td>각 항목이 독립적이고 짧다</td>
+          </tr>
+          <tr>
+            <td>뉴스 기사 / 블로그</td>
+            <td>512~1024</td>
+            <td>50~100</td>
+            <td>단락 단위로 의미가 완결된다</td>
+          </tr>
+          <tr>
+            <td>기술 문서 / 매뉴얼</td>
+            <td>512~1024</td>
+            <td>100~200</td>
+            <td>개념 설명이 여러 문장에 걸친다</td>
+          </tr>
+          <tr>
+            <td>법률 / 계약서</td>
+            <td>1024~2048</td>
+            <td>200~300</td>
+            <td>조항의 맥락이 길고, 단절되면 의미가 왜곡된다</td>
+          </tr>
+          <tr>
+            <td>학술 논문</td>
+            <td>1024~2048</td>
+            <td>200~300</td>
+            <td>논증 흐름이 여러 단락에 걸친다</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>트레이드오프: 검색 정밀도 vs 맥락 보존</h3>
+      <p>
+        chunk_size를 줄이면 검색 정밀도가 올라가지만 맥락이 손실되고,
+        chunk_size를 늘리면 맥락은 보존되지만 무관한 정보가 함께 포함된다.
+        이 트레이드오프를 이해하고 문서 특성에 맞는 균형점을 찾는 것이 핵심이다.
+      </p>
+
+      <div class="mermaid-wrapper">
+<pre class="mermaid">
+graph LR
+    SMALL["작은 chunk_size\n(256)"] --- BALANCE["균형점\n(512~1024)"] --- LARGE["큰 chunk_size\n(2048)"]
+
+    SMALL_P["검색 정밀도: 높음\n맥락 보존: 낮음\n노이즈: 적음"] --> SMALL
+    BALANCE_P["검색 정밀도: 보통\n맥락 보존: 보통\n대부분의 문서에 적합"] --> BALANCE
+    LARGE_P["검색 정밀도: 낮음\n맥락 보존: 높음\n노이즈: 많음"] --> LARGE
+</pre>
+      </div>
+
+      <h3>실험적 접근법: 여러 크기로 테스트하라</h3>
+      <p>
+        가이드라인은 출발점일 뿐이다.
+        실제 프로젝트에서는 <strong>여러 chunk_size로 실험</strong>하고,
+        검색 결과의 품질을 비교하여 최적값을 찾아야 한다.
+      </p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">PYTHON</span>
+        <pre class="line-numbers"><code class="language-python">from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+
+def compare_chunk_sizes(text: str, sizes: list[int], overlap_ratio: float = 0.15):
+    """여러 chunk_size로 분할 결과를 비교한다."""
+    print(f"원본 텍스트 길이: {len(text)}자\n")
+
+    for size in sizes:
+        overlap = int(size * overlap_ratio)
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=size,
+            chunk_overlap=overlap,
+        )
+        chunks = splitter.split_text(text)
+        lengths = [len(c) for c in chunks]
+
+        print(f"chunk_size={size:>5}, overlap={overlap:>4}")
+        print(f"  청크 수: {len(chunks)}")
+        print(f"  평균 크기: {sum(lengths) / len(lengths):.0f}자")
+        print(f"  최소/최대: {min(lengths)}자 / {max(lengths)}자")
+        print()
+
+
+# 사용 예시
+compare_chunk_sizes(
+    text=long_document_text,
+    sizes=[256, 512, 1024, 2048],
+)</code></pre>
+      </div>
+
+      <div class="info-box info-box--tip">
+        <div class="info-box__title">TIP</div>
+        <p>
+          실무에서 가장 효과적인 최적화 방법은 이렇다:
+          (1) 대표적인 질문 10~20개를 준비한다.
+          (2) 여러 chunk_size로 인덱싱한다.
+          (3) 각 설정에서 질문을 실행하고 검색 결과의 관련성을 비교한다.
+          (4) 가장 높은 검색 품질을 보이는 chunk_size를 선택한다.
+          이 과정은 번거롭지만, chunk_size 하나가 RAG 전체 성능을 좌우하므로
+          투자할 가치가 충분하다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 5. PDF 문서 특화 청킹 -->
+    <section>
+      <h2>PDF 문서 특화 청킹</h2>
+      <p>
+        PDF 문서를 청킹할 때는 일반 텍스트와 다른 추가적인 고려사항이 있다.
+        페이지 경계, 제목 구조, 테이블 처리 등 PDF 특유의 문제를 해결해야 한다.
+      </p>
+
+      <h3>페이지 경계 처리</h3>
+      <p>
+        PDF 로더는 보통 페이지 단위로 Document를 생성한다.
+        하지만 문단이 페이지를 넘어가는 경우가 흔하다.
+        "제3장 결론... (페이지 넘김) ...따라서 이 연구의 의의는"처럼
+        하나의 문단이 두 페이지에 걸쳐 있으면, 페이지 단위로 분할 시 문맥이 끊긴다.
+      </p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">PYTHON</span>
+        <pre class="line-numbers"><code class="language-python">from langchain_core.documents import Document
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+
+def merge_pages_then_chunk(
+    docs: list[Document],
+    chunk_size: int = 1000,
+    chunk_overlap: int = 150,
+) -> list[Document]:
+    """
+    페이지 단위 Document를 먼저 병합한 후 청킹한다.
+    페이지 경계에서 문맥이 끊기는 문제를 해결한다.
+    """
+    # 같은 source의 Document를 하나로 병합
+    merged = {}
+    for doc in docs:
+        source = doc.metadata.get("source", "unknown")
+        if source not in merged:
+            merged[source] = {
+                "text": "",
+                "metadata": {"source": source}
+            }
+        merged[source]["text"] += doc.page_content + "\n\n"
+
+    # 병합된 텍스트를 청킹
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+    )
+
+    result = []
+    for source, data in merged.items():
+        chunks = splitter.split_text(data["text"])
+        for i, chunk in enumerate(chunks):
+            result.append(Document(
+                page_content=chunk,
+                metadata={
+                    "source": source,
+                    "chunk_index": i,
+                    "total_chunks": len(chunks),
+                }
+            ))
+
+    return result</code></pre>
+      </div>
+
+      <h3>제목/소제목 기반 분할</h3>
+      <p>
+        구조화된 문서(보고서, 매뉴얼 등)에서는 제목 체계를 활용하여
+        섹션 단위로 분할하는 것이 효과적이다.
+        문서를 Markdown으로 변환한 후 <code>MarkdownHeaderTextSplitter</code>를 사용할 수 있다.
+      </p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">PYTHON</span>
+        <pre class="line-numbers"><code class="language-python">from langchain_text_splitters import MarkdownHeaderTextSplitter
+
+# Markdown 형식의 텍스트를 제목 기준으로 분할
+markdown_text = """# 제1장 서론
+
+이 보고서는 2024년 사업 성과를 정리한 것이다.
+
+## 1.1 배경
+
+글로벌 시장 환경이 급변하는 가운데...
+
+## 1.2 목적
+
+본 보고서의 목적은 다음과 같다.
+
+# 제2장 사업 실적
+
+## 2.1 매출 현황
+
+2024년 총 매출은 1,200억원으로 전년 대비 20% 증가했다.
+
+## 2.2 영업이익
+
+영업이익은 300억원으로 목표 대비 120% 달성했다."""
+
+headers_to_split_on = [
+    ("#", "대제목"),
+    ("##", "소제목"),
+]
+
+splitter = MarkdownHeaderTextSplitter(
+    headers_to_split_on=headers_to_split_on,
+)
+chunks = splitter.split_text(markdown_text)
+
+for chunk in chunks:
+    print(f"metadata: {chunk.metadata}")
+    print(f"내용: {chunk.page_content[:80]}")
+    print()
+# metadata: {'대제목': '제1장 서론'}
+# 내용: 이 보고서는 2024년 사업 성과를 정리한 것이다.
+#
+# metadata: {'대제목': '제1장 서론', '소제목': '1.1 배경'}
+# 내용: 글로벌 시장 환경이 급변하는 가운데...
+# ...</code></pre>
+      </div>
+
+      <h3>테이블 보존 전략</h3>
+      <p>
+        표(table)가 포함된 문서에서는 표가 여러 청크로 쪼개지지 않도록 주의해야 한다.
+        표의 행이 다른 청크로 분리되면 의미가 완전히 파괴된다.
+      </p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">PYTHON</span>
+        <pre class="line-numbers"><code class="language-python">def chunk_with_table_preservation(
+    docs: list[Document],
+    chunk_size: int = 1000,
+    chunk_overlap: int = 150,
+) -> list[Document]:
+    """
+    테이블을 하나의 청크로 유지하면서 분할한다.
+    UnstructuredPDFLoader의 elements 모드와 함께 사용한다.
+    """
+    result = []
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+    )
+
+    for doc in docs:
+        category = doc.metadata.get("category", "")
+
+        if category == "Table":
+            # 테이블은 분할하지 않고 그대로 유지
+            # chunk_size보다 크더라도 하나의 청크로 보존
+            result.append(doc)
+        else:
+            # 일반 텍스트는 RecursiveCharacterTextSplitter로 분할
+            if len(doc.page_content) > chunk_size:
+                split_docs = splitter.split_documents([doc])
+                result.extend(split_docs)
+            else:
+                result.append(doc)
+
+    return result</code></pre>
+      </div>
+    </section>
+
+    <!-- 6. 청킹과 메타데이터 -->
+    <section>
+      <h2>청킹과 메타데이터</h2>
+      <p>
+        청킹 시 원본 문서의 메타데이터를 보존하는 것은 매우 중요하다.
+        <code>RecursiveCharacterTextSplitter.split_documents()</code>를 사용하면
+        원본의 metadata가 모든 청크에 자동으로 복사된다.
+        하지만 추가적인 메타데이터를 부여하면 나중에 검색과 디버깅이 훨씬 수월해진다.
+      </p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">PYTHON</span>
+        <pre class="line-numbers"><code class="language-python">from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_core.documents import Document
+
+
+def chunk_with_enriched_metadata(
+    docs: list[Document],
+    chunk_size: int = 1000,
+    chunk_overlap: int = 150,
+) -> list[Document]:
+    """청킹 후 메타데이터를 보강한다."""
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+    )
+
+    # split_documents로 metadata 자동 복사
+    chunks = splitter.split_documents(docs)
+
+    # 추가 메타데이터 부여
+    for i, chunk in enumerate(chunks):
+        chunk.metadata["chunk_id"] = f"{chunk.metadata.get('source', 'unknown')}_{i}"
+        chunk.metadata["chunk_index"] = i
+        chunk.metadata["chunk_size"] = len(chunk.page_content)
+        chunk.metadata["chunk_config"] = f"size={chunk_size}_overlap={chunk_overlap}"
+
+    return chunks
+
+
+# 사용 예시
+chunked_docs = chunk_with_enriched_metadata(docs, chunk_size=800, chunk_overlap=120)
+
+# 결과 확인
+for doc in chunked_docs[:3]:
+    print(f"청크 ID: {doc.metadata['chunk_id']}")
+    print(f"출처: {doc.metadata.get('source')}")
+    print(f"페이지: {doc.metadata.get('page')}")
+    print(f"크기: {doc.metadata['chunk_size']}자")
+    print(f"내용 미리보기: {doc.page_content[:80]}...")
+    print()</code></pre>
+      </div>
+
+      <div class="info-box info-box--tip">
+        <div class="info-box__title">TIP</div>
+        <p>
+          metadata에 <code>chunk_id</code>를 부여하면
+          나중에 특정 청크를 업데이트하거나 삭제할 때 유용하다.
+          또한 <code>chunk_config</code>를 기록해두면
+          여러 설정으로 실험할 때 어떤 설정으로 만든 청크인지 추적할 수 있다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 7. 실전 디버깅 -->
+    <section>
+      <h2>실전 디버깅: 청킹 결과 검증</h2>
+      <p>
+        청킹이 끝나면 반드시 결과를 검증해야 한다.
+        잘못된 청킹은 나중에 검색 품질 저하로 나타나는데,
+        그때 가서 원인을 찾으려면 디버깅이 매우 어렵다.
+        청킹 직후에 통계를 확인하고 샘플을 육안으로 검수하는 것이 가장 효율적이다.
+      </p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">PYTHON</span>
+        <pre class="line-numbers"><code class="language-python">import random
+import statistics
+
+
+def analyze_chunks(chunks: list[Document]):
+    """청킹 결과의 통계를 분석하고 잠재적 문제를 감지한다."""
+    print("=" * 60)
+    print("청킹 결과 분석 리포트")
+    print("=" * 60)
+
+    lengths = [len(c.page_content) for c in chunks]
+
+    # 기본 통계
+    print(f"\n[기본 통계]")
+    print(f"  총 청크 수: {len(chunks)}")
+    print(f"  평균 크기: {statistics.mean(lengths):.0f}자")
+    print(f"  중앙값:    {statistics.median(lengths):.0f}자")
+    print(f"  표준편차:  {statistics.stdev(lengths):.0f}자")
+    print(f"  최소 크기: {min(lengths)}자")
+    print(f"  최대 크기: {max(lengths)}자")
+
+    # 잠재적 문제 감지
+    print(f"\n[문제 감지]")
+
+    # 너무 작은 청크 (의미 없는 조각일 가능성)
+    tiny_chunks = [c for c in chunks if len(c.page_content) < 50]
+    if tiny_chunks:
+        print(f"  경고: 50자 미만 청크 {len(tiny_chunks)}개 발견")
+        for c in tiny_chunks[:3]:
+            print(f"    → '{c.page_content[:40]}...'")
+
+    # 빈 청크
+    empty_chunks = [c for c in chunks if len(c.page_content.strip()) == 0]
+    if empty_chunks:
+        print(f"  경고: 빈 청크 {len(empty_chunks)}개 발견")
+
+    # 너무 큰 청크 (분할이 제대로 안 된 경우)
+    very_large = [c for c in chunks if len(c.page_content) > 3000]
+    if very_large:
+        print(f"  경고: 3000자 초과 청크 {len(very_large)}개 발견")
+
+    if not tiny_chunks and not empty_chunks and not very_large:
+        print(f"  문제 없음")
+
+    # 출처별 분포
+    sources = {}
+    for c in chunks:
+        src = c.metadata.get("source", "unknown")
+        sources[src] = sources.get(src, 0) + 1
+
+    print(f"\n[출처별 청크 수]")
+    for src, count in sorted(sources.items()):
+        print(f"  {src}: {count}개")
+
+    # 랜덤 샘플
+    print(f"\n[랜덤 샘플 3개]")
+    samples = random.sample(chunks, min(3, len(chunks)))
+    for i, chunk in enumerate(samples):
+        print(f"\n  --- 샘플 {i+1} ---")
+        print(f"  출처: {chunk.metadata.get('source', '?')}")
+        print(f"  크기: {len(chunk.page_content)}자")
+        print(f"  내용: {chunk.page_content[:150]}...")
+
+    print(f"\n{'=' * 60}")
+
+
+# 사용 예시
+analyze_chunks(chunked_docs)</code></pre>
+      </div>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">BASH</span>
+        <pre class="line-numbers"><code class="language-bash"># 실행 결과 예시
+============================================================
+청킹 결과 분석 리포트
+============================================================
+
+[기본 통계]
+  총 청크 수: 127
+  평균 크기: 823자
+  중앙값:    856자
+  표준편차:  198자
+  최소 크기: 145자
+  최대 크기: 1000자
+
+[문제 감지]
+  경고: 50자 미만 청크 0개 발견
+  문제 없음
+
+[출처별 청크 수]
+  data/report_2024.pdf: 85개
+  data/manual.pdf: 42개
+
+[랜덤 샘플 3개]
+
+  --- 샘플 1 ---
+  출처: data/report_2024.pdf
+  크기: 912자
+  내용: 제3장 사업 실적 요약. 2024년도 매출은 전년 대비 20% 성장한 1,200억원을 기록했다...
+============================================================</code></pre>
+      </div>
+
+      <div class="info-box info-box--warning">
+        <div class="info-box__title">WARNING</div>
+        <p>
+          청킹 결과에서 <strong>50자 미만의 매우 작은 청크</strong>가 많이 발견되면
+          separator 설정이나 chunk_size가 적절하지 않은 것이다.
+          반대로 <strong>chunk_size보다 훨씬 큰 청크</strong>가 있다면
+          분할기가 적절한 분할 지점을 찾지 못한 것이므로 separator를 조정해야 한다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 8. 다음 단계 -->
+    <section>
+      <h2>다음 단계</h2>
+      <p>
+        이번 장에서는 RAG에서 가장 중요한 전처리 단계 중 하나인 <strong>청킹 전략</strong>을 깊이 있게 다뤘다.
+        핵심 내용을 정리하면 다음과 같다:
+      </p>
+      <ul>
+        <li>청킹은 임베딩 모델의 토큰 제한, 검색 정밀도, LLM 컨텍스트 효율성, 비용 최적화를 위해 필수적이다</li>
+        <li><code>chunk_size</code>와 <code>chunk_overlap</code>이 청킹의 핵심 파라미터이다. overlap은 chunk_size의 10~20%가 적절하다</li>
+        <li><strong><code>RecursiveCharacterTextSplitter</code></strong>가 대부분의 상황에서 최선의 선택이다. 계층적 구분자로 의미 단위를 보존한다</li>
+        <li><code>SemanticChunker</code>는 가장 정밀하지만 비용이 발생한다. 고품질이 필요한 경우에 고려한다</li>
+        <li>최적의 chunk_size는 문서 유형에 따라 다르다 — FAQ는 256~512, 일반 문서는 512~1024, 법률/논문은 1024~2048</li>
+        <li>PDF 문서는 페이지 경계 처리, 테이블 보존, 제목 기반 분할 등 추가적인 고려가 필요하다</li>
+        <li>청킹 후 반드시 통계를 확인하고 샘플을 육안으로 검수해야 한다</li>
+      </ul>
+      <p>
+        다음 장에서는 청킹된 텍스트를 <strong>벡터(임베딩)</strong>로 변환하는 과정을 다룬다.
+        임베딩은 텍스트의 의미를 숫자 벡터로 표현하는 기술로,
+        RAG의 "의미 기반 검색"을 가능하게 하는 핵심 요소이다.
+      </p>
+    </section>
+
+    <nav class="page-nav"></nav>
+  </main>
+</div>
+
+<script src="../js/nav.js?v=2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad:true, theme:'neutral', flowchart:{useMaxWidth:true}});</script>
+</body>
+</html>

@@ -1,0 +1,1030 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>고급 RAG 패턴 - RAG 튜토리얼</title>
+  <link rel="stylesheet" href="../css/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.css">
+</head>
+<body>
+
+<header class="site-header">
+  <button class="hamburger" aria-label="메뉴">
+    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+  </button>
+  <a href="../index.html" class="site-header__title"><span>RAG</span> 튜토리얼</a>
+</header>
+
+<div class="layout">
+  <nav class="sidebar"></nav>
+  <main class="main">
+    <span class="chapter-badge chapter-badge--rag-advanced">심화 과정</span>
+    <h1>고급 RAG 패턴</h1>
+    <p class="chapter-subtitle">Multi-Query, HyDE, Parent-Child, CRAG, Self-RAG, Agentic RAG로 RAG의 한계를 돌파한다</p>
+
+    <!-- 1. Pre-retrieval 최적화 -->
+    <section>
+      <h2>Pre-retrieval 최적화 &mdash; 검색 전에 쿼리를 변환한다</h2>
+      <p>
+        이전 장에서 다룬 기법들은 검색 결과를 <em>후처리</em>하는 데 집중했다.
+        하지만 검색 품질 문제의 근본 원인은 종종 <strong>쿼리 자체</strong>에 있다.
+        사용자의 질문이 모호하거나, 검색에 적합하지 않은 형태이거나,
+        한 가지 표현만으로는 관련 문서를 충분히 찾을 수 없는 경우가 많다.
+      </p>
+      <p>
+        Pre-retrieval 최적화는 <strong>검색을 수행하기 전에 쿼리를 변환</strong>하여
+        검색 성공률을 높이는 전략이다. 대표적인 세 가지 기법을 살펴본다.
+      </p>
+
+      <h3>Multi-Query Retrieval &mdash; 하나의 질문을 여러 관점으로 변환</h3>
+      <p>
+        사용자가 "RAG 시스템의 성능을 어떻게 개선할 수 있는가?"라고 질문했다고 하자.
+        이 질문 하나만으로 벡터 검색을 하면, "성능 개선"이라는 표현과 유사한 문서만 검색된다.
+        하지만 관련 문서에는 "검색 품질 최적화", "응답 정확도 향상", "지연시간 단축" 등
+        다양한 표현이 사용되고 있을 수 있다.
+      </p>
+      <p>
+        <strong>Multi-Query Retrieval</strong>은 LLM을 사용하여 원래 질문을
+        3~5개의 서로 다른 표현으로 변환한 뒤, 각각에 대해 검색을 수행하고 결과를 통합한다.
+      </p>
+
+      <div class="mermaid-wrapper">
+<pre class="mermaid">
+graph TD
+    Q["원래 질문:<br/>'RAG 성능을 어떻게 개선하나?'"] --> LLM["LLM (쿼리 변환)"]
+
+    LLM --> Q1["변환 1: 'RAG 검색 품질 최적화 방법'"]
+    LLM --> Q2["변환 2: '벡터 검색 정확도 향상 기법'"]
+    LLM --> Q3["변환 3: 'LLM 응답 품질을 높이는 RAG 전략'"]
+
+    Q1 --> R1["검색 결과 1"]
+    Q2 --> R2["검색 결과 2"]
+    Q3 --> R3["검색 결과 3"]
+
+    R1 --> MERGE["결과 통합<br/>(중복 제거)"]
+    R2 --> MERGE
+    R3 --> MERGE
+
+    MERGE --> FINAL["최종 문서 목록"]
+</pre>
+      </div>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">PYTHON</span>
+        <pre class="line-numbers"><code class="language-python">from langchain.retrievers.multi_query import MultiQueryRetriever
+from langchain_openai import ChatOpenAI
+
+llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+
+# Multi-Query Retriever 생성
+multi_retriever = MultiQueryRetriever.from_llm(
+    retriever=vector_retriever,
+    llm=llm,
+)
+
+# 내부적으로 LLM이 쿼리를 여러 버전으로 변환 → 각각 검색 → 결과 통합
+results = multi_retriever.invoke("RAG 시스템의 성능을 어떻게 개선할 수 있는가?")
+
+print(f"검색된 문서 수: {len(results)}")
+for doc in results:
+    print(f"  [{doc.metadata.get('source', '')}] {doc.page_content[:60]}...")</code></pre>
+      </div>
+
+      <h3>커스텀 프롬프트로 쿼리 변환 제어</h3>
+      <p>
+        기본 프롬프트가 생성하는 쿼리 변환이 도메인에 맞지 않는 경우,
+        커스텀 프롬프트를 지정하여 변환 방식을 제어할 수 있다.
+      </p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">PYTHON</span>
+        <pre class="line-numbers"><code class="language-python">from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import LineListOutputParser
+
+# 커스텀 쿼리 변환 프롬프트
+prompt = ChatPromptTemplate.from_messages([
+    ("system", """당신은 검색 쿼리를 다양한 관점에서 변환하는 전문가이다.
+주어진 질문을 3가지 다른 표현으로 바꿔라.
+각 표현은 원래 질문과 같은 의미이지만 다른 키워드와 관점을 사용해야 한다.
+각 변환된 질문을 한 줄에 하나씩 출력하라. 번호나 접두사를 붙이지 마라."""),
+    ("human", "{question}"),
+])
+
+# 커스텀 프롬프트를 사용하는 Multi-Query Retriever
+multi_retriever = MultiQueryRetriever.from_llm(
+    retriever=vector_retriever,
+    llm=llm,
+    prompt=prompt,
+)
+
+# 로깅을 활성화하면 생성된 쿼리들을 확인할 수 있다
+import logging
+logging.getLogger("langchain.retrievers.multi_query").setLevel(logging.DEBUG)
+
+results = multi_retriever.invoke("Kubernetes에서 Pod가 자꾸 재시작되는 이유는?")</code></pre>
+      </div>
+
+      <div class="info-box info-box--tip">
+        <div class="info-box__title">TIP</div>
+        <p>
+          Multi-Query의 비용은 쿼리 변환을 위한 LLM 호출 1회 + 변환된 쿼리 수만큼의 벡터 검색이다.
+          LLM 호출 비용은 입출력 토큰이 적으므로 미미하고,
+          벡터 검색도 밀리초 단위이므로 전체적인 지연시간 증가는 크지 않다.
+          비용 대비 효과가 매우 좋은 기법이다.
+        </p>
+      </div>
+    </section>
+
+    <!-- HyDE -->
+    <section>
+      <h3>HyDE (Hypothetical Document Embeddings) &mdash; 가상 답변으로 검색</h3>
+      <p>
+        <strong>HyDE</strong>는 2023년 Gao et al.이 제안한 혁신적인 기법이다.
+        핵심 아이디어는 직관적이면서도 강력하다:
+        <strong>"질문을 임베딩하는 대신, 질문에 대한 가상의 답변을 생성하고 그것을 임베딩하여 검색한다."</strong>
+      </p>
+
+      <h4>왜 효과적인가?</h4>
+      <p>
+        임베딩 공간에서 질문(question)과 답변(answer)은 서로 다른 영역에 위치하는 경향이 있다.
+        "Kubernetes에서 Pod 재시작 정책은?"이라는 질문의 임베딩과
+        "restartPolicy는 Always, OnFailure, Never 세 가지가 있으며..."라는 답변의 임베딩은
+        의미적으로 관련이 있지만, 벡터 공간에서의 거리가 생각보다 멀 수 있다.
+      </p>
+      <p>
+        HyDE는 LLM이 생성한 가상 답변의 임베딩으로 검색하므로,
+        실제 답변이 포함된 문서와 벡터 공간에서 더 가까운 위치에서 검색이 시작된다.
+      </p>
+
+      <div class="mermaid-wrapper">
+<pre class="mermaid">
+graph LR
+    Q["질문: 'Pod 재시작<br/>정책은?'"] --> LLM["LLM"]
+    LLM --> HYP["가상 답변:<br/>'restartPolicy는<br/>Always, OnFailure,<br/>Never 세 가지...'"]
+    HYP --> EMB["임베딩"]
+    EMB --> SEARCH["벡터 검색"]
+    SEARCH --> DOCS["실제 관련 문서"]
+
+    style HYP fill:#fef3c7,stroke:#f59e0b
+</pre>
+      </div>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">PYTHON</span>
+        <pre class="line-numbers"><code class="language-python">from langchain.chains import HypotheticalDocumentEmbedder
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+
+llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+base_embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+
+# HyDE 임베딩 체인 생성
+hyde_embeddings = HypotheticalDocumentEmbedder.from_llm(
+    llm=llm,
+    base_embeddings=base_embeddings,
+    prompt_key="web_search",  # 내장 프롬프트 사용
+)
+
+# HyDE 임베딩을 사용하는 벡터 스토어 검색
+# 내부 동작:
+# 1. 질문 → LLM → 가상 답변 생성
+# 2. 가상 답변 → 임베딩 → 벡터
+# 3. 벡터로 벡터 스토어 검색
+results = store.similarity_search_by_vector(
+    hyde_embeddings.embed_query("Kubernetes Pod 재시작 정책은?"),
+    k=4,
+)</code></pre>
+      </div>
+
+      <div class="info-box info-box--warning">
+        <div class="info-box__title">WARNING</div>
+        <p>
+          HyDE의 가장 큰 한계는 <strong>LLM이 생성한 가상 답변이 완전히 틀린 방향일 수 있다</strong>는 점이다.
+          LLM이 해당 주제에 대해 잘못된 지식을 가지고 있으면,
+          가상 답변의 임베딩이 올바른 문서가 아닌 잘못된 문서 방향으로 검색을 유도할 수 있다.
+          도메인에 대한 LLM의 기본 지식이 어느 정도 정확해야 HyDE가 효과적이다.
+        </p>
+      </div>
+    </section>
+
+    <!-- Step-back Prompting -->
+    <section>
+      <h3>Step-back Prompting &mdash; 추상적 질문으로 변환</h3>
+      <p>
+        <strong>Step-back Prompting</strong>은 구체적인 질문을 더 추상적이고 상위 수준의 질문으로 변환하여
+        더 넓은 맥락의 문서를 검색하는 기법이다.
+        2023년 Google DeepMind가 제안했다.
+      </p>
+      <p>
+        예를 들어:
+      </p>
+      <ul>
+        <li>"2024년 3분기 매출은 얼마인가?" → <strong>"회사의 분기별 매출 추이는 어떠한가?"</strong></li>
+        <li>"Python 3.12에서 추가된 type alias 문법은?" → <strong>"Python의 타입 시스템은 어떻게 발전해왔는가?"</strong></li>
+        <li>"서울 강남구의 평균 아파트 가격은?" → <strong>"서울 지역별 부동산 시장 동향은?"</strong></li>
+      </ul>
+      <p>
+        구체적인 질문으로 검색하면 정확히 일치하는 문서만 찾지만,
+        추상적 질문으로 검색하면 관련된 배경 정보와 맥락까지 함께 확보할 수 있다.
+        실무에서는 구체적 질문과 추상적 질문의 검색 결과를 <strong>모두 결합</strong>하여
+        LLM에 전달하는 방식으로 사용한다.
+      </p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">PYTHON</span>
+        <pre class="line-numbers"><code class="language-python">from langchain_core.prompts import ChatPromptTemplate
+from langchain_openai import ChatOpenAI
+
+llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+
+# Step-back 질문 생성 프롬프트
+step_back_prompt = ChatPromptTemplate.from_messages([
+    ("system", """당신은 질문을 더 넓은 맥락의 상위 질문으로 변환하는 전문가이다.
+주어진 구체적 질문에 대해, 관련 배경 지식을 검색하기에 적합한
+한 단계 추상화된 질문을 생성하라.
+변환된 질문만 출력하라."""),
+    ("human", "{question}"),
+])
+
+step_back_chain = step_back_prompt | llm
+
+# Step-back 질문 생성
+original = "2024년 3분기 매출은 얼마인가?"
+step_back_q = step_back_chain.invoke({"question": original}).content
+print(f"원래 질문: {original}")
+print(f"Step-back: {step_back_q}")
+# Step-back: "회사의 분기별 매출 추이와 실적은 어떠한가?"
+
+# 두 질문으로 각각 검색하여 결과를 결합
+original_docs = vector_retriever.invoke(original)
+stepback_docs = vector_retriever.invoke(step_back_q)
+
+# 중복 제거 후 결합
+all_docs = original_docs + [
+    d for d in stepback_docs
+    if d.page_content not in [od.page_content for od in original_docs]
+]</code></pre>
+      </div>
+    </section>
+
+    <!-- 2. Advanced Indexing 전략 -->
+    <section>
+      <h2>Advanced Indexing 전략</h2>
+      <p>
+        지금까지의 기법들은 <strong>검색 시점</strong>에 쿼리나 결과를 조작하는 방식이었다.
+        이번에는 <strong>인덱싱 시점</strong>의 전략을 다룬다.
+        문서를 어떻게 구조화하여 저장하느냐에 따라 검색 품질이 근본적으로 달라질 수 있다.
+      </p>
+
+      <h3>Parent-Child Retriever &mdash; 작은 청크로 검색, 큰 청크를 반환</h3>
+      <p>
+        청킹에는 근본적인 딜레마가 존재한다:
+      </p>
+      <ul>
+        <li><strong>작은 청크</strong>: 검색 정밀도가 높다. 특정 내용을 정확히 찾을 수 있다. 하지만 맥락이 부족하여 LLM이 충분한 답변을 생성하지 못할 수 있다.</li>
+        <li><strong>큰 청크</strong>: 충분한 맥락을 포함한다. 하지만 무관한 내용도 함께 포함되어 검색 정밀도가 떨어진다.</li>
+      </ul>
+      <p>
+        <strong>Parent-Child Retriever</strong>는 이 딜레마를 우아하게 해결한다:
+        <strong>"작은 청크(child)로 정밀하게 검색하되, 해당 청크가 속한 큰 청크(parent)를 반환한다."</strong>
+      </p>
+
+      <div class="mermaid-wrapper">
+<pre class="mermaid">
+graph TD
+    DOC["원본 문서"] --> PS["Parent 분할<br/>(2000자)"]
+
+    PS --> P1["Parent 1"]
+    PS --> P2["Parent 2"]
+    PS --> P3["Parent 3"]
+
+    P1 --> CS1["Child 분할<br/>(400자)"]
+    P2 --> CS2["Child 분할<br/>(400자)"]
+    P3 --> CS3["Child 분할<br/>(400자)"]
+
+    CS1 --> C1["Child 1-1"]
+    CS1 --> C2["Child 1-2"]
+    CS1 --> C3["Child 1-3"]
+
+    CS2 --> C4["Child 2-1"]
+    CS2 --> C5["Child 2-2"]
+
+    CS3 --> C6["Child 3-1"]
+    CS3 --> C7["Child 3-2"]
+
+    C1 -.->|"벡터 스토어에<br/>임베딩 저장"| VS["벡터 스토어"]
+    C2 -.-> VS
+    C3 -.-> VS
+    C4 -.-> VS
+    C5 -.-> VS
+    C6 -.-> VS
+    C7 -.-> VS
+
+    P1 -.->|"DocStore에<br/>원본 저장"| DS["DocStore"]
+    P2 -.-> DS
+    P3 -.-> DS
+
+    Q["질문"] -->|"검색"| VS
+    VS -->|"Child 2-1 매칭"| HIT["검색 히트"]
+    HIT -->|"Parent 2 반환"| DS
+
+    style C4 fill:#bbf7d0,stroke:#16a34a
+    style P2 fill:#dbeafe,stroke:#3b82f6
+</pre>
+      </div>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">PYTHON</span>
+        <pre class="line-numbers"><code class="language-python">from langchain.retrievers import ParentDocumentRetriever
+from langchain.storage import InMemoryStore
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_openai import OpenAIEmbeddings
+from langchain_chroma import Chroma
+
+# Parent와 Child 각각의 텍스트 분할기 설정
+parent_splitter = RecursiveCharacterTextSplitter(
+    chunk_size=2000,
+    chunk_overlap=200,
+)
+child_splitter = RecursiveCharacterTextSplitter(
+    chunk_size=400,
+    chunk_overlap=50,
+)
+
+# 벡터 스토어 (Child 임베딩 저장용)
+vectorstore = Chroma(
+    collection_name="parent_child",
+    embedding_function=OpenAIEmbeddings(model="text-embedding-3-small"),
+)
+
+# DocStore (Parent 원본 저장용)
+docstore = InMemoryStore()
+
+# Parent-Child Retriever 생성
+retriever = ParentDocumentRetriever(
+    vectorstore=vectorstore,
+    docstore=docstore,
+    child_splitter=child_splitter,
+    parent_splitter=parent_splitter,
+)
+
+# 문서 추가 — 내부적으로 Parent/Child 분할 + 저장이 자동 수행된다
+retriever.add_documents(docs)
+
+# 검색 — Child로 검색하지만 Parent가 반환된다
+results = retriever.invoke("서비스 장애 대응 절차")
+
+for doc in results:
+    print(f"[Parent 반환] 길이: {len(doc.page_content)}자")
+    print(f"  내용: {doc.page_content[:150]}...")
+    print()</code></pre>
+      </div>
+
+      <div class="info-box info-box--info">
+        <div class="info-box__title">INFO</div>
+        <p>
+          <code>InMemoryStore</code>는 프로토타이핑에 적합하지만 프로덕션에서는
+          프로세스 재시작 시 데이터가 사라진다.
+          프로덕션에서는 Redis, PostgreSQL 등 영속적인 스토어를 DocStore로 사용해야 한다.
+          LangChain은 <code>RedisStore</code>, <code>SQLStore</code> 등을 제공한다.
+        </p>
+      </div>
+
+      <h3>Multi-Vector Retriever &mdash; 하나의 문서에 여러 벡터</h3>
+      <p>
+        하나의 문서를 다양한 형태로 표현하여 각각을 임베딩하는 전략이다.
+        원본 문서 외에 요약, 예상 질문 목록 등 여러 "표현(representation)"을 만들어
+        벡터 스토어에 저장한다.
+        어떤 형태의 쿼리가 오더라도 적절한 표현과 매칭될 확률이 높아진다.
+      </p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">PYTHON</span>
+        <pre class="line-numbers"><code class="language-python">from langchain.retrievers.multi_vector import MultiVectorRetriever
+from langchain.storage import InMemoryByteStore
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_chroma import Chroma
+from langchain_core.documents import Document
+import uuid
+
+llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+
+# 벡터 스토어와 DocStore 준비
+vectorstore = Chroma(
+    collection_name="multi_vector",
+    embedding_function=OpenAIEmbeddings(model="text-embedding-3-small"),
+)
+docstore = InMemoryByteStore()
+
+# Multi-Vector Retriever 생성
+retriever = MultiVectorRetriever(
+    vectorstore=vectorstore,
+    byte_store=docstore,
+    id_key="doc_id",
+)
+
+# 각 문서에 대해 여러 표현을 생성
+for doc in docs:
+    doc_id = str(uuid.uuid4())
+
+    # 원본 문서를 DocStore에 저장
+    retriever.docstore.mset([(doc_id, doc)])
+
+    # 표현 1: 요약
+    summary = llm.invoke(
+        f"다음 텍스트를 2~3문장으로 요약하라:\n\n{doc.page_content}"
+    ).content
+    summary_doc = Document(
+        page_content=summary,
+        metadata={"doc_id": doc_id, "type": "summary"},
+    )
+
+    # 표현 2: 예상 질문 목록
+    questions = llm.invoke(
+        f"다음 텍스트에 대해 물을 수 있는 질문 3개를 생성하라:\n\n{doc.page_content}"
+    ).content
+    question_doc = Document(
+        page_content=questions,
+        metadata={"doc_id": doc_id, "type": "questions"},
+    )
+
+    # 벡터 스토어에 여러 표현을 저장 (검색 시 이것들이 매칭됨)
+    retriever.vectorstore.add_documents([summary_doc, question_doc])
+
+# 검색 — 요약이나 질문으로 매칭되더라도 원본 문서가 반환된다
+results = retriever.invoke("서비스 가용성을 높이는 방법")
+for doc in results:
+    print(f"[원본 반환] {doc.page_content[:100]}...")</code></pre>
+      </div>
+
+      <div class="info-box info-box--tip">
+        <div class="info-box__title">TIP</div>
+        <p>
+          Multi-Vector Retriever는 인덱싱 시 LLM 호출이 필요하므로 초기 구축 비용이 높다.
+          하지만 한 번 인덱싱하면 검색 시에는 추가 LLM 호출 없이 일반 벡터 검색과 동일한 속도로 동작한다.
+          문서가 자주 변경되지 않는 환경에서 특히 효과적이다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 3. Corrective RAG (CRAG) -->
+    <section>
+      <h2>Corrective RAG (CRAG) &mdash; 검색 결과를 평가하고 보정한다</h2>
+      <p>
+        지금까지의 모든 기법은 한 가지 공통된 가정을 갖고 있다:
+        <strong>"벡터 스토어 안에 답이 있다."</strong>
+        하지만 현실에서는 벡터 스토어의 문서가 사용자 질문에 대한 답을 포함하지 않는 경우가 있다.
+        정보가 오래되었거나, 애초에 해당 주제의 문서가 없을 수 있다.
+      </p>
+      <p>
+        <strong>Corrective RAG (CRAG)</strong>는 2024년 Yan et al.이 제안한 기법으로,
+        검색 결과의 관련성을 LLM이 평가하고, 결과에 따라 전략을 동적으로 변경한다.
+      </p>
+
+      <h3>3가지 판정과 대응</h3>
+      <ol>
+        <li><strong>Correct (정확)</strong>: 검색 결과가 질문과 관련이 높다. → 검색 결과를 그대로 사용한다.</li>
+        <li><strong>Incorrect (부정확)</strong>: 검색 결과가 질문과 전혀 관련이 없다. → 벡터 스토어 검색을 포기하고 웹 검색으로 대체한다.</li>
+        <li><strong>Ambiguous (모호)</strong>: 일부 관련이 있지만 확실하지 않다. → 벡터 스토어 결과와 웹 검색 결과를 결합한다.</li>
+      </ol>
+
+      <div class="mermaid-wrapper">
+<pre class="mermaid">
+graph TD
+    Q["사용자 질문"] --> RET["벡터 스토어 검색"]
+    RET --> EVAL["LLM 관련성 평가"]
+
+    EVAL -->|"Correct"| USE["검색 결과 사용"]
+    EVAL -->|"Incorrect"| WEB["웹 검색으로 대체"]
+    EVAL -->|"Ambiguous"| BOTH["검색 결과 + 웹 검색<br/>결합"]
+
+    USE --> GEN["LLM 답변 생성"]
+    WEB --> GEN
+    BOTH --> GEN
+
+    style USE fill:#bbf7d0,stroke:#16a34a
+    style WEB fill:#fecaca,stroke:#dc2626
+    style BOTH fill:#fef08a,stroke:#ca8a04
+</pre>
+      </div>
+
+      <h3>관련성 평가 구현</h3>
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">PYTHON</span>
+        <pre class="line-numbers"><code class="language-python">from langchain_core.prompts import ChatPromptTemplate
+from langchain_openai import ChatOpenAI
+from langchain_core.output_parsers import StrOutputParser
+
+llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+
+# 관련성 평가 프롬프트
+grading_prompt = ChatPromptTemplate.from_messages([
+    ("system", """당신은 검색 결과의 관련성을 평가하는 전문가이다.
+주어진 질문과 검색된 문서를 비교하여 관련성을 판단하라.
+
+판정 기준:
+- "correct": 문서가 질문에 대한 답변을 직접적으로 포함한다
+- "incorrect": 문서가 질문과 전혀 관련이 없다
+- "ambiguous": 부분적으로 관련이 있지만 완전한 답변은 아니다
+
+반드시 "correct", "incorrect", "ambiguous" 중 하나만 출력하라."""),
+    ("human", """질문: {question}
+
+검색된 문서:
+{document}
+
+판정:"""),
+])
+
+grading_chain = grading_prompt | llm | StrOutputParser()
+
+
+def evaluate_relevance(question: str, docs: list) -> dict:
+    """검색 결과의 관련성을 평가하고 분류한다."""
+    correct_docs = []
+    incorrect_docs = []
+    ambiguous_docs = []
+
+    for doc in docs:
+        grade = grading_chain.invoke({
+            "question": question,
+            "document": doc.page_content,
+        }).strip().lower()
+
+        if grade == "correct":
+            correct_docs.append(doc)
+        elif grade == "incorrect":
+            incorrect_docs.append(doc)
+        else:
+            ambiguous_docs.append(doc)
+
+    return {
+        "correct": correct_docs,
+        "incorrect": incorrect_docs,
+        "ambiguous": ambiguous_docs,
+    }
+
+
+def corrective_rag(question: str, retriever, web_search_tool, llm):
+    """CRAG 파이프라인 실행."""
+    # 1단계: 벡터 스토어 검색
+    docs = retriever.invoke(question)
+
+    # 2단계: 관련성 평가
+    evaluation = evaluate_relevance(question, docs)
+
+    correct = evaluation["correct"]
+    ambiguous = evaluation["ambiguous"]
+
+    # 3단계: 판정에 따른 전략 변경
+    if len(correct) >= 2:
+        # Correct: 충분한 관련 문서가 있으면 그대로 사용
+        context_docs = correct
+        strategy = "vector_store"
+    elif len(correct) == 0 and len(ambiguous) == 0:
+        # Incorrect: 관련 문서가 전혀 없으면 웹 검색
+        web_results = web_search_tool.invoke(question)
+        context_docs = web_results
+        strategy = "web_search"
+    else:
+        # Ambiguous: 벡터 스토어 결과 + 웹 검색 결합
+        web_results = web_search_tool.invoke(question)
+        context_docs = correct + ambiguous + web_results
+        strategy = "hybrid"
+
+    print(f"[CRAG] 전략: {strategy}")
+    print(f"  - Correct: {len(correct)}개")
+    print(f"  - Ambiguous: {len(ambiguous)}개")
+    print(f"  - Incorrect: {len(evaluation['incorrect'])}개")
+
+    # 4단계: 답변 생성
+    context = "\n\n".join([d.page_content for d in context_docs])
+    answer = llm.invoke(
+        f"다음 컨텍스트를 기반으로 질문에 답하라.\n\n"
+        f"컨텍스트:\n{context}\n\n질문: {question}"
+    )
+
+    return answer.content</code></pre>
+      </div>
+
+      <div class="info-box info-box--warning">
+        <div class="info-box__title">WARNING</div>
+        <p>
+          CRAG는 모든 검색 결과에 대해 LLM 기반 관련성 평가를 수행하므로,
+          검색 결과가 4개이면 LLM 호출이 4회 추가된다.
+          비용과 지연시간이 증가하므로, 정확도가 특히 중요한 고가치 쿼리에 선택적으로 적용하는 것이 현실적이다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 4. Self-RAG -->
+    <section>
+      <h2>Self-RAG &mdash; 자기 반성적 RAG</h2>
+      <p>
+        <strong>Self-RAG</strong>는 2023년 Asai et al.이 제안한 기법으로,
+        LLM이 RAG 파이프라인의 여러 단계에서 <strong>스스로 판단하고 반성</strong>하는 프레임워크이다.
+        CRAG가 검색 결과의 관련성만 평가했다면,
+        Self-RAG는 더 넓은 범위의 의사결정을 LLM에 맡긴다.
+      </p>
+
+      <h3>Self-RAG의 핵심 판단</h3>
+      <ol>
+        <li><strong>"검색이 필요한가?" (Retrieve)</strong>: 모든 질문에 검색이 필요한 것은 아니다. "1+1은?"처럼 일반 상식이면 검색 없이 바로 답한다.</li>
+        <li><strong>"검색 결과가 관련있는가?" (IsRel)</strong>: CRAG와 유사하게, 검색된 문서의 관련성을 평가한다.</li>
+        <li><strong>"답변이 검색 결과에 근거하는가?" (IsSup)</strong>: 생성된 답변이 실제로 검색 결과에서 도출된 것인지, 환각인지 판단한다.</li>
+        <li><strong>"답변이 유용한가?" (IsUse)</strong>: 최종 답변이 사용자의 질문에 실질적으로 도움이 되는지 평가한다.</li>
+      </ol>
+
+      <div class="mermaid-wrapper">
+<pre class="mermaid">
+graph TD
+    Q["사용자 질문"] --> D1{"1. 검색이<br/>필요한가?"}
+
+    D1 -->|"불필요"| DIRECT["LLM 직접 답변"]
+    D1 -->|"필요"| RET["벡터 스토어 검색"]
+
+    RET --> D2{"2. 검색 결과가<br/>관련 있는가?"}
+
+    D2 -->|"아니오"| RETRY["재검색 /<br/>쿼리 변환"]
+    D2 -->|"예"| GEN["답변 생성"]
+
+    GEN --> D3{"3. 답변이 검색<br/>결과에 근거하는가?"}
+
+    D3 -->|"아니오 (환각)"| REGEN["답변 재생성"]
+    D3 -->|"예"| D4{"4. 답변이<br/>유용한가?"}
+
+    D4 -->|"아니오"| REFINE["답변 개선"]
+    D4 -->|"예"| FINAL["최종 답변 반환"]
+
+    RETRY --> RET
+    REGEN --> GEN
+
+    style DIRECT fill:#e0e7ff,stroke:#6366f1
+    style FINAL fill:#bbf7d0,stroke:#16a34a
+</pre>
+      </div>
+
+      <h3>기존 RAG와의 차이</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>항목</th>
+            <th>기존 RAG</th>
+            <th>Self-RAG</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>검색 여부</strong></td>
+            <td>항상 검색</td>
+            <td>필요할 때만 검색</td>
+          </tr>
+          <tr>
+            <td><strong>결과 평가</strong></td>
+            <td>평가 없이 바로 사용</td>
+            <td>관련성 평가 후 사용</td>
+          </tr>
+          <tr>
+            <td><strong>답변 검증</strong></td>
+            <td>검증 없음</td>
+            <td>근거 기반 여부 검증</td>
+          </tr>
+          <tr>
+            <td><strong>파이프라인</strong></td>
+            <td>고정된 단방향</td>
+            <td>동적 분기 (조건부)</td>
+          </tr>
+          <tr>
+            <td><strong>복잡도</strong></td>
+            <td>낮음</td>
+            <td>높음</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>구현 개요</h3>
+      <p>
+        Self-RAG의 완전한 구현은 상당히 복잡하다.
+        각 판단 포인트에서 LLM을 호출하고, 조건에 따라 파이프라인이 동적으로 분기해야 하기 때문이다.
+        이러한 복잡한 조건 분기와 반복 로직은 단순한 체인(Chain)으로는 구현하기 어렵고,
+        <strong>LangGraph</strong>의 상태 기반 그래프(State Graph)가 적합하다.
+      </p>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">PYTHON</span>
+        <pre class="line-numbers"><code class="language-python"># Self-RAG의 핵심 로직 개요 (LangGraph 연계)
+from langgraph.graph import StateGraph, END
+from typing import TypedDict
+
+class RAGState(TypedDict):
+    question: str
+    documents: list
+    answer: str
+    needs_retrieval: bool
+    is_relevant: bool
+    is_grounded: bool
+
+def should_retrieve(state: RAGState) -> RAGState:
+    """1단계: 검색이 필요한지 LLM이 판단한다."""
+    question = state["question"]
+    decision = llm.invoke(
+        f"다음 질문에 답하기 위해 외부 문서 검색이 필요한가? "
+        f"'yes' 또는 'no'로만 답하라.\n\n질문: {question}"
+    ).content.strip().lower()
+    state["needs_retrieval"] = decision == "yes"
+    return state
+
+def retrieve(state: RAGState) -> RAGState:
+    """2단계: 벡터 스토어에서 검색한다."""
+    state["documents"] = retriever.invoke(state["question"])
+    return state
+
+def grade_documents(state: RAGState) -> RAGState:
+    """3단계: 검색 결과의 관련성을 평가한다."""
+    # CRAG와 유사한 관련성 평가 로직
+    relevant_docs = []
+    for doc in state["documents"]:
+        grade = grading_chain.invoke({
+            "question": state["question"],
+            "document": doc.page_content,
+        }).strip().lower()
+        if grade in ["correct", "ambiguous"]:
+            relevant_docs.append(doc)
+    state["documents"] = relevant_docs
+    state["is_relevant"] = len(relevant_docs) > 0
+    return state
+
+def generate(state: RAGState) -> RAGState:
+    """4단계: 답변을 생성한다."""
+    context = "\n\n".join([d.page_content for d in state["documents"]])
+    state["answer"] = llm.invoke(
+        f"컨텍스트:\n{context}\n\n질문: {state['question']}"
+    ).content
+    return state
+
+def check_hallucination(state: RAGState) -> RAGState:
+    """5단계: 답변이 검색 결과에 근거하는지 확인한다."""
+    context = "\n\n".join([d.page_content for d in state["documents"]])
+    check = llm.invoke(
+        f"답변이 아래 컨텍스트에 근거하는가? 'yes' 또는 'no'로만 답하라.\n\n"
+        f"컨텍스트:\n{context}\n\n답변: {state['answer']}"
+    ).content.strip().lower()
+    state["is_grounded"] = check == "yes"
+    return state
+
+# LangGraph를 사용한 Self-RAG 구현은 LangGraph 튜토리얼 과정에서 상세히 다룬다</code></pre>
+      </div>
+
+      <div class="info-box info-box--info">
+        <div class="info-box__title">INFO</div>
+        <p>
+          Self-RAG는 개념적으로는 이상적이지만, 프로덕션에 적용할 때는 주의가 필요하다.
+          매 단계에서 LLM을 호출하므로 비용과 지연시간이 크게 증가한다.
+          모든 쿼리에 Self-RAG를 적용하기보다는,
+          <strong>고가치 쿼리</strong>(의료, 법률, 금융 등 정확도가 매우 중요한 도메인)에
+          선택적으로 적용하는 것이 현실적이다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 5. Agentic RAG -->
+    <section>
+      <h2>Agentic RAG &mdash; 에이전트 기반 RAG</h2>
+      <p>
+        <strong>Agentic RAG</strong>는 RAG를 고정된 파이프라인이 아니라
+        <strong>에이전트의 도구(Tool)</strong>로 사용하는 패러다임이다.
+        에이전트가 질문을 분석하여 어떤 벡터 스토어를 검색할지, 검색이 실패하면 어떻게 대응할지,
+        여러 차례 검색이 필요한지 등을 자율적으로 판단한다.
+      </p>
+
+      <h3>Agentic RAG의 핵심 능력</h3>
+      <ul>
+        <li><strong>검색 소스 라우팅</strong>: 질문 유형에 따라 적절한 벡터 스토어를 선택한다. "기술 문서"와 "재무 보고서"가 별도 벡터 스토어에 있을 때, 질문을 분석하여 올바른 스토어로 라우팅한다.</li>
+        <li><strong>검색 실패 시 자동 재시도</strong>: 첫 검색 결과가 불충분하면, 쿼리를 변환하여 재검색하거나 다른 데이터 소스를 시도한다.</li>
+        <li><strong>다단계 검색</strong>: 복잡한 질문을 하위 질문으로 분해하고, 각각을 순차적으로 검색하여 종합적인 답변을 생성한다.</li>
+        <li><strong>도구 결합</strong>: RAG 검색 외에 계산기, 코드 실행, 웹 검색 등 다른 도구와 자유롭게 결합한다.</li>
+      </ul>
+
+      <div class="mermaid-wrapper">
+<pre class="mermaid">
+graph TD
+    Q["사용자 질문"] --> AGENT["LLM 에이전트"]
+
+    AGENT -->|"기술 질문"| TOOL1["도구 1:<br/>기술 문서 RAG"]
+    AGENT -->|"재무 질문"| TOOL2["도구 2:<br/>재무 보고서 RAG"]
+    AGENT -->|"최신 정보"| TOOL3["도구 3:<br/>웹 검색"]
+    AGENT -->|"계산 필요"| TOOL4["도구 4:<br/>코드 실행"]
+
+    TOOL1 --> AGENT
+    TOOL2 --> AGENT
+    TOOL3 --> AGENT
+    TOOL4 --> AGENT
+
+    AGENT -->|"충분한 정보 확보"| ANS["최종 답변"]
+    AGENT -->|"정보 부족"| AGENT
+
+    style AGENT fill:#ede9fe,stroke:#8b5cf6
+</pre>
+      </div>
+
+      <div class="code-block">
+        <button class="code-block__copy">복사</button>
+        <span class="code-block__label">PYTHON</span>
+        <pre class="line-numbers"><code class="language-python">from langchain.tools.retriever import create_retriever_tool
+from langchain_openai import ChatOpenAI
+from langgraph.prebuilt import create_react_agent
+
+# 여러 벡터 스토어에 대한 검색 도구 생성
+tech_retriever = tech_vectorstore.as_retriever(search_kwargs={"k": 4})
+finance_retriever = finance_vectorstore.as_retriever(search_kwargs={"k": 4})
+
+tech_tool = create_retriever_tool(
+    retriever=tech_retriever,
+    name="search_tech_docs",
+    description="기술 문서(아키텍처, API, 인프라)를 검색한다. "
+                "기술적인 질문에 사용하라.",
+)
+
+finance_tool = create_retriever_tool(
+    retriever=finance_retriever,
+    name="search_finance_docs",
+    description="재무 보고서(매출, 비용, 실적)를 검색한다. "
+                "재무/경영 관련 질문에 사용하라.",
+)
+
+# 에이전트 생성 — 질문에 따라 적절한 도구를 자동 선택
+llm = ChatOpenAI(model="gpt-4o", temperature=0)
+agent = create_react_agent(
+    model=llm,
+    tools=[tech_tool, finance_tool],
+)
+
+# 실행 — 에이전트가 질문을 분석하여 적절한 RAG 도구를 호출
+response = agent.invoke({
+    "messages": [{"role": "user", "content": "서비스 아키텍처 변경이 매출에 미친 영향은?"}]
+})
+# 에이전트는 tech_tool과 finance_tool을 모두 호출하여 정보를 종합할 수 있다</code></pre>
+      </div>
+
+      <div class="info-box info-box--tip">
+        <div class="info-box__title">TIP</div>
+        <p>
+          Agentic RAG는 LangGraph를 사용하면 훨씬 정교하게 구현할 수 있다.
+          ReAct 에이전트의 단순한 도구 호출을 넘어서,
+          검색 → 평가 → 재검색의 순환 그래프를 명시적으로 설계할 수 있다.
+          LangGraph 튜토리얼 과정에서 이 패턴을 실습과 함께 상세히 다룬다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 6. 패턴 선택 가이드 -->
+    <section>
+      <h2>패턴 선택 가이드</h2>
+      <p>
+        이 장에서 다룬 고급 RAG 패턴들은 각각 다른 문제를 해결하며,
+        복잡도와 비용도 크게 다르다.
+        올바른 패턴을 선택하기 위한 가이드를 제시한다.
+      </p>
+
+      <h3>패턴별 비교</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>패턴</th>
+            <th>복잡도</th>
+            <th>추가 비용</th>
+            <th>효과</th>
+            <th>적합한 상황</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Multi-Query</strong></td>
+            <td>낮음</td>
+            <td>LLM 1회 + 검색 N회</td>
+            <td>높음</td>
+            <td>모호한 질문, 다양한 표현</td>
+          </tr>
+          <tr>
+            <td><strong>HyDE</strong></td>
+            <td>낮음</td>
+            <td>LLM 1회</td>
+            <td>중~높음</td>
+            <td>질문-문서 임베딩 불일치</td>
+          </tr>
+          <tr>
+            <td><strong>Step-back</strong></td>
+            <td>낮음</td>
+            <td>LLM 1회 + 검색 1회</td>
+            <td>중간</td>
+            <td>구체적 질문에 맥락이 필요할 때</td>
+          </tr>
+          <tr>
+            <td><strong>Parent-Child</strong></td>
+            <td>중간</td>
+            <td>인덱싱 시 추가 저장소</td>
+            <td>높음</td>
+            <td>청크 크기 딜레마 해결</td>
+          </tr>
+          <tr>
+            <td><strong>Multi-Vector</strong></td>
+            <td>중간</td>
+            <td>인덱싱 시 LLM N회</td>
+            <td>높음</td>
+            <td>다양한 쿼리 유형 대응</td>
+          </tr>
+          <tr>
+            <td><strong>CRAG</strong></td>
+            <td>높음</td>
+            <td>LLM N회 (관련성 평가)</td>
+            <td>매우 높음</td>
+            <td>검색 실패 허용 불가</td>
+          </tr>
+          <tr>
+            <td><strong>Self-RAG</strong></td>
+            <td>매우 높음</td>
+            <td>LLM 다수 호출</td>
+            <td>매우 높음</td>
+            <td>정확도 최우선 도메인</td>
+          </tr>
+          <tr>
+            <td><strong>Agentic RAG</strong></td>
+            <td>높음</td>
+            <td>에이전트 판단에 따라 가변</td>
+            <td>매우 높음</td>
+            <td>다중 소스, 복잡한 질문</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>권장 도입 순서</h3>
+      <p>
+        "어떤 패턴을 사용해야 하는가?"에 대한 가장 실용적인 답은
+        <strong>"단순한 것부터 시작하여 필요할 때 복잡한 것을 추가한다"</strong>이다.
+      </p>
+      <ol>
+        <li><strong>Naive RAG</strong>: 기본 벡터 검색. 놀랍게도, 많은 사용 사례에서 이것만으로 충분하다.</li>
+        <li><strong>Hybrid + Re-ranking</strong>: 검색 품질이 부족하면 가장 먼저 적용한다. 비용 대비 효과가 가장 높다.</li>
+        <li><strong>Multi-Query</strong>: 사용자 질문이 다양한 표현으로 들어오는 환경에서 추가한다. 구현이 간단하다.</li>
+        <li><strong>Parent-Child</strong>: 청크 크기 문제가 두드러질 때 적용한다.</li>
+        <li><strong>CRAG / Agentic RAG</strong>: 정확도가 사업적으로 매우 중요한 경우에 도입한다.</li>
+      </ol>
+
+      <div class="info-box info-box--warning">
+        <div class="info-box__title">WARNING</div>
+        <p>
+          <strong>조기 최적화를 경계하라.</strong>
+          고급 패턴을 적용하기 전에 먼저 기본 RAG의 성능을 정량적으로 측정해야 한다.
+          청킹 전략이나 임베딩 모델을 변경하는 것만으로도 극적인 개선을 볼 수 있다.
+          문제를 정확히 진단하지 않고 복잡한 패턴을 도입하면,
+          시스템은 복잡해지지만 실질적인 품질 개선은 미미한 결과를 낳는다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 7. 다음 단계 -->
+    <section>
+      <h2>다음 단계</h2>
+      <p>
+        이 장에서는 RAG의 한계를 돌파하는 고급 패턴들을 살펴보았다.
+        Pre-retrieval 최적화(Multi-Query, HyDE, Step-back),
+        Advanced Indexing(Parent-Child, Multi-Vector),
+        자기 보정 패턴(CRAG, Self-RAG),
+        그리고 에이전트 기반 RAG까지 다양한 전략의 원리와 구현을 다뤘다.
+      </p>
+      <p>
+        그런데 한 가지 핵심 질문이 남아 있다:
+        <strong>"이 기법들을 적용한 결과, 실제로 품질이 개선되었는가?"</strong>
+        감이나 직관이 아니라 정량적 수치로 답할 수 있어야 한다.
+      </p>
+      <p>
+        다음 장에서는 <strong>RAGAS</strong> 프레임워크를 사용하여
+        RAG 시스템의 품질을 정량적으로 평가하는 방법을 다룬다.
+        Faithfulness(충실도), Answer Relevancy(답변 관련성),
+        Context Precision(컨텍스트 정밀도), Context Recall(컨텍스트 재현율) 등
+        핵심 지표의 의미를 이해하고, 자동화된 평가 파이프라인을 구축할 것이다.
+      </p>
+    </section>
+
+    <nav class="page-nav"></nav>
+  </main>
+</div>
+
+<script src="../js/nav.js?v=2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/line-numbers/prism-line-numbers.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad:true, theme:'neutral', flowchart:{useMaxWidth:true}});</script>
+</body>
+</html>
